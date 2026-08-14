@@ -38,4 +38,15 @@ def create_app(db_path: Path | None = None, config_path: Path | None = None,
     async def health():
         return {"status": "ok"}
 
+    from starlette.responses import FileResponse
+    from starlette.staticfiles import StaticFiles
+
+    dist = ROOT / "frontend" / "dist"
+    if (dist / "index.html").exists():
+        @app.get("/dashboard", include_in_schema=False)
+        async def dashboard():
+            return FileResponse(dist / "index.html")
+
+        app.mount("/", StaticFiles(directory=dist, html=True), name="static")
+
     return app
