@@ -48,6 +48,9 @@ async def proxy_endpoint(provider: str, rest: str, request: Request):
     if protocol is None:
         return await forwarder.forward_passthrough(request, cfg, endpoint, raw_body)
 
+    if body is not None and not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="invalid json body")
+
     from backend.proxy.preprocess import inject_stream_options
 
     inject_stream_options(body or {}, protocol, endpoint)

@@ -91,3 +91,22 @@ async def test_stream_upstream_abort_recorded(app, client):
     assert resp.status_code == 200
     rec = queries.query_requests({})["items"][0]
     assert rec["success"] == 0 and rec["error_type"] == "upstream_abort"
+
+
+@pytest.mark.asyncio
+async def test_stream_http_error_records_error_type(app, client):
+    database.init_db(app.state.db_path)
+
+    def handler(request):
+        return httpx.Response(
+            429,
+            headers={"content-type": "application/json"},
+            content=b'{"error":{"type":"rate_limit_error","message":"slow"}}',
+        )
+    _set_upstream(app, handler)
+
+    resp = await client.post("/provider_a/v1/chat/completions", json={"model": "m", "stream": True})
+    assert resp.status_code == 429
+    assert resp.json()["error"]["type"] == "rate_limit_error"
+    rec = queries.query_requests({})["items"][0]
+    assert rec["success"] == 0 and rec["status_code"] == 429 and rec["error_type"] == "rate_limit_error"

@@ -97,6 +97,18 @@ async def test_passthrough_models_without_record(app, client):
 
 
 @pytest.mark.asyncio
+async def test_non_dict_json_body_400_without_record(app, client):
+    database.init_db(app.state.db_path)
+    resp = await client.post(
+        "/provider_a/v1/chat/completions",
+        content=b"[1, 2, 3]",
+        headers={"content-type": "application/json"},
+    )
+    assert resp.status_code == 400
+    assert queries.query_requests({})["total"] == 0
+
+
+@pytest.mark.asyncio
 async def test_upstream_connect_error_502(app, client):
     def handler(request):
         raise httpx.ConnectError("boom")

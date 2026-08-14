@@ -33,7 +33,9 @@ class StreamUsageParser:
             new_usage = self._handle_event(event) or new_usage
         return new_usage
 
-    def _handle_event(self, event: dict) -> Usage | None:
+    def _handle_event(self, event) -> Usage | None:
+        if not isinstance(event, dict):
+            return None
         if "error" in event and isinstance(event["error"], dict):
             err = event["error"]
             self.stream_error = err.get("type") or err.get("code") or "stream_error"

@@ -37,3 +37,13 @@ def test_anthropic_delta_only():
     p = StreamUsageParser("anthropic")
     p.feed('data: {"type":"message_delta","usage":{"output_tokens":42}}\n\n')
     assert p.finish() == Usage(0, 42, 0, 0, 42)
+
+
+def test_non_dict_events_are_skipped_without_crash():
+    p = StreamUsageParser("openai")
+    assert p.feed('data: 42\ndata: null\ndata: "error"\ndata: [1, 2]\n\n') is None
+    assert p.stream_error is None
+    assert p.finish() is None
+    u = p.feed('data: {"choices":[{"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}\n\ndata: [DONE]\n\n')
+    assert u == Usage(10, 5, 0, 0, 15)
+    assert p.finish() == Usage(10, 5, 0, 0, 15)

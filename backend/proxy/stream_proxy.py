@@ -9,7 +9,7 @@ from starlette.responses import StreamingResponse
 
 from backend.config import ProviderConfig
 from backend.database.database import insert_request
-from backend.proxy.forwarder import build_record
+from backend.proxy.forwarder import _error_type_from, build_record
 from backend.proxy.preprocess import (
     apply_auth_fallback, forward_request_headers, strip_response_headers,
 )
@@ -52,6 +52,25 @@ async def forward_stream(request: Request, cfg: ProviderConfig, provider: str,
     parser = StreamUsageParser(protocol)
     state = {"usage": None, "error_type": None, "recorded": False}
 
+    pre_buffer = None
+    if upstream.status_code >= 400:
+        # Error bodies are small; buffer them so we can extract error_type
+        # without delaying/blocking the client on the streamed body.
+        pre_buffer = await upstream.aread()
+        if pre_buffer:
+            try:
+                payload = json.loads(pre_buffer.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                payload = None
+            if isinstance(payload, dict):
+                state["error_type"] = _error_type_from(payload)
+            if "text/event-stream" in (upstream.headers.get("content-type") or ""):
+                usage = parser.feed(pre_buffer.decode("utf-8", errors="ignore"))
+                if usage is not None:
+                    state["usage"] = usage
+                if parser.stream_error is not None:
+                    state["error_type"] = state["error_type"] or parser.stream_error
+
     def _record():
         if state["recorded"]:
             return
@@ -69,13 +88,16 @@ async def forward_stream(request: Request, cfg: ProviderConfig, provider: str,
 
     async def generate():
         try:
-            async for chunk in upstream.aiter_bytes():
-                yield chunk
-                usage = parser.feed(chunk.decode("utf-8", errors="ignore"))
-                if usage is not None:
-                    state["usage"] = usage
-                if parser.stream_error is not None:
-                    state["error_type"] = parser.stream_error
+            if pre_buffer is not None:
+                yield pre_buffer
+            else:
+                async for chunk in upstream.aiter_bytes():
+                    yield chunk
+                    usage = parser.feed(chunk.decode("utf-8", errors="ignore"))
+                    if usage is not None:
+                        state["usage"] = usage
+                    if parser.stream_error is not None:
+                        state["error_type"] = parser.stream_error
         except asyncio.CancelledError:
             state["error_type"] = state["error_type"] or "client_abort"
             _record()
