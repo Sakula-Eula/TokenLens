@@ -3,3 +3,12 @@ data/
 coverage/
 .env
 
+__pycache__/
+.venv/
+.pytest_cache/
+frontend/dist/
+frontend/node_modules/
+*.db
+*.db-wal
+*.db-shm
+
