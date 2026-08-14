@@ -18,6 +18,10 @@ def create_app(db_path: Path | None = None, config_path: Path | None = None,
     )
     app.state.providers: dict = {}
 
+    from backend.config import load_config
+
+    app.state.providers = load_config(app.state.config_path)
+
     @app.get("/health")
     async def health():
         return {"status": "ok"}
