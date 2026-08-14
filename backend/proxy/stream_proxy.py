@@ -34,15 +34,15 @@ async def _send_upstream(request: Request, cfg: ProviderConfig, protocol: str,
 
 
 async def forward_stream(request: Request, cfg: ProviderConfig, provider: str,
-                         protocol: str, endpoint: str, body: dict, model: str | None):
-    latency_start = time.perf_counter()
+                         protocol: str, endpoint: str, body: dict, model: str | None,
+                         *, latency_start: float, created_at: str):
     upstream = await _send_upstream(request, cfg, protocol, endpoint, body)
     if upstream is None:
         insert_request(build_record(
             request_id=f"req_{uuid.uuid4().hex[:12]}", provider=provider, model=model,
             endpoint=endpoint, stream=True, usage=None,
             latency_ms=round((time.perf_counter() - latency_start) * 1000),
-            status_code=502, error_type="proxy_connection_error",
+            status_code=502, error_type="proxy_connection_error", created_at=created_at,
         ))
         return StreamingResponse(
             iter([json.dumps({"error": {"message": "无法连接上游", "type": "proxy_connection_error"}}).encode()]),
@@ -84,6 +84,7 @@ async def forward_stream(request: Request, cfg: ProviderConfig, provider: str,
             usage=usage,
             latency_ms=round((time.perf_counter() - latency_start) * 1000),
             status_code=upstream.status_code, error_type=state["error_type"],
+            created_at=created_at,
         ))
 
     async def generate():
@@ -105,7 +106,10 @@ async def forward_stream(request: Request, cfg: ProviderConfig, provider: str,
         except httpx.HTTPError:
             state["error_type"] = state["error_type"] or "upstream_abort"
         finally:
-            _record()
+            try:
+                _record()
+            finally:
+                await upstream.aclose()
 
     return StreamingResponse(
         generate(), status_code=upstream.status_code,

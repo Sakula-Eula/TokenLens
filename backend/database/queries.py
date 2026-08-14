@@ -76,7 +76,7 @@ def query_requests(filters: dict) -> dict:
         where.append("created_at < ?")
         params.append(filters["date_to"])
     clause = (" WHERE " + " AND ".join(where)) if where else ""
-    limit = min(int(filters.get("limit", 50)), 200)
+    limit = max(1, min(int(filters.get("limit", 50)), 200))
     offset = max(int(filters.get("offset", 0)), 0)
     conn = get_connection()
     total = conn.execute(f"SELECT COUNT(*) FROM api_requests{clause}", params).fetchone()[0]

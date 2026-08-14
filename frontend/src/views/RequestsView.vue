@@ -13,7 +13,7 @@ async function refresh() {
   if (filters.value.status !== "") params.status = Number(filters.value.status);
   try {
     data.value = await fetchRequests(params);
-  } catch { /* 下一轮重试 */ }
+  } catch { /* Keep the last successful data visible if polling fails. */ }
 }
 
 onMounted(() => {

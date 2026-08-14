@@ -5,6 +5,7 @@ import pytest
 
 from backend import create_app
 from backend.database import database, queries
+from backend.proxy.forwarder import build_record
 
 UPSTREAM_OK = {
     "id": "chatcmpl-1", "model": "gpt-5.6-sol",
@@ -58,6 +59,15 @@ async def test_openai_non_stream_proxy_and_record(app, client):
     assert rec["stream"] == 0
 
 
+def test_build_record_preserves_request_start_time():
+    record = build_record(
+        request_id="req_start", provider="provider_a", model="m",
+        endpoint="/v1/chat/completions", stream=False, usage=None,
+        latency_ms=10, status_code=200, created_at="2026-08-14T09:00:00",
+    )
+    assert record["created_at"] == "2026-08-14T09:00:00"
+
+
 @pytest.mark.asyncio
 async def test_error_status_recorded(app, client):
     def handler(request):
@@ -78,11 +88,30 @@ async def test_unknown_provider_404(app, client):
 
 
 @pytest.mark.asyncio
+async def test_large_body_under_limit_is_forwarded(app, client):
+    database.init_db(app.state.db_path)
+    # 1MB 请求体（远超旧版 32KB 上限，模拟 Claude Code 长对话请求）
+    body = {"model": "gpt-5.6-sol",
+            "messages": [{"role": "user", "content": "x" * (1024 * 1024)}]}
+    resp = await client.post(
+        "/provider_a/v1/chat/completions",
+        content=json.dumps(body).encode("utf-8"),
+        headers={"content-type": "application/json"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["usage"]["total_tokens"] == 15
+    assert queries.query_requests({})["total"] == 1
+
+
+@pytest.mark.asyncio
 async def test_body_too_large_413(app, client):
     database.init_db(app.state.db_path)
-    resp = await client.post("/provider_a/v1/chat/completions", content=b"x" * 40000,
+    # 超过 32MB 上限才返回 413（32 * 1024 * 1024 + 1）
+    resp = await client.post("/provider_a/v1/chat/completions",
+                             content=b"x" * (32 * 1024 * 1024 + 1),
                              headers={"content-type": "application/json"})
     assert resp.status_code == 413
+    assert queries.query_requests({})["total"] == 0
 
 
 @pytest.mark.asyncio

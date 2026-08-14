@@ -74,3 +74,16 @@ async def test_requests_endpoint(app, client):
     data = resp.json()
     assert data["total"] == 1 and data["items"][0]["request_id"] == "req_2"
     assert "authorization" not in data["items"][0]
+
+
+@pytest.mark.asyncio
+async def test_requests_endpoint_clamps_limit(app, client):
+    database.init_db(app.state.db_path)
+    database.insert_request(_record())
+    database.insert_request(_record(request_id="req_2"))
+
+    too_small = (await client.get("/api/requests", params={"limit": -1})).json()
+    assert too_small["limit"] == 1 and len(too_small["items"]) == 1
+
+    too_large = (await client.get("/api/requests", params={"limit": 999})).json()
+    assert too_large["limit"] == 200 and len(too_large["items"]) == 2

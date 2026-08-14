@@ -29,7 +29,7 @@ async function refresh() {
       series: [{ type: "line", smooth: true, areaStyle: {}, data: trend.items.map((t) => t.total_tokens) }],
       tooltip: { trigger: "axis" },
     });
-  } catch { /* 后端未就绪时静默，下一轮重试 */ }
+  } catch { /* Keep the last successful data visible if polling fails. */ }
 }
 
 function maxTokens(list) {
@@ -52,7 +52,7 @@ watch(range, refresh);
   <div>
     <div class="cards">
       <div class="card"><div class="label">今日请求数</div><div class="value">{{ summary.requests }}</div></div>
-      <div class="card"><div class="label">今日Token</div><div class="value">{{ fmt(summary.total_tokens) }}</div></div>
+      <div class="card"><div class="label">今日 Token</div><div class="value">{{ fmt(summary.total_tokens) }}</div></div>
       <div class="card"><div class="label">Input Token</div><div class="value">{{ fmt(summary.input_tokens) }}</div></div>
       <div class="card"><div class="label">Output Token</div><div class="value">{{ fmt(summary.output_tokens) }}</div></div>
       <div class="card"><div class="label">今日错误</div><div class="value">{{ summary.errors }}（{{ summary.error_rate }}%）</div></div>
@@ -63,9 +63,9 @@ watch(range, refresh);
       <div class="panel-head">
         <h2>Token Trend</h2>
         <select v-model="range">
-          <option value="24h">最近24小时</option>
-          <option value="7d">最近7天</option>
-          <option value="30d">最近30天</option>
+          <option value="24h">最近 24 小时</option>
+          <option value="7d">最近 7 天</option>
+          <option value="30d">最近 30 天</option>
         </select>
       </div>
       <div ref="chartEl" style="height: 260px"></div>

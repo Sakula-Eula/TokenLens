@@ -15,7 +15,7 @@
 - Python 3.12（Windows 用 `py -3.12` 创建 venv；venv 内解释器为 `.venv/Scripts/python.exe`）。
 - 监听 `127.0.0.1:7788`（spec 第 21.3 节）。
 - `base_url` 约定不含 `/v1` 后缀（spec 第 6.6 节），配置中若以 `/v1` 结尾则启动报错。
-- 请求体上限 32KB，超出返回 413（spec 第 7.2 节）。
+- 请求体上限 32MB，超出返回 413（spec 第 7.2 节；由最初 32KB 放宽，与 Claude Code 客户端限制一致）。
 - 上游连接超时 10s；读超时 300s，按"相邻两次收到数据的时间间隔"计时（spec 第 6.4 节）。
 - `success = 2xx 且 error_type 为 None`（spec 第 15 章）。
 - 绝不落盘：`Authorization`/`x-api-key` 头、API Key、Prompt 正文、模型完整回答（spec 第 21.2 节）。

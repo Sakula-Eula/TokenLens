@@ -1,56 +1,72 @@
-# ModelMeter OpenAI 监听器
+# TokenLens
 
-一个零依赖的本地 OpenAI API 代理与使用量面板。它将调用转发到 `api.openai.com`，并在响应完成后记录模型、输入/输出/cached/reasoning token、估算费用、状态码和时间。
+TokenLens 是一个运行在 Windows 本地的模型 API 透明代理与用量监控工具。它位于客户端与模型 Provider 之间，透传请求和响应，并把 Provider、模型、Token 用量、耗时与状态码记录到本地 SQLite 数据库。
 
-它不会记录 API Key、提示词、模型回答或请求正文。所有统计数据保存在本机 `data/usage.jsonl`。
+它不会保存 Authorization、API Key、Prompt 正文或模型完整响应。
+
+## 环境要求
+
+- Python 3.11+
+- Node.js 20+（仅用于构建 Dashboard）
 
 ## 启动
 
-需要 Node.js 20 或更新版本（本机现有 Node.js 22 可直接运行）。
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+Push-Location frontend
+npm ci
+npm run build
+Pop-Location
+.\.venv\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 7788
+```
+
+打开 <http://127.0.0.1:7788/dashboard> 查看 Dashboard。
+
+## 系统托盘启动（推荐）
 
 ```powershell
-node src/server.js
+.\.venv\Scripts\python.exe tray.py
 ```
 
-打开 <http://127.0.0.1:3188> 查看统计面板。
+启动后 TokenLens 常驻 Windows 右下角系统托盘：
 
-## 接入 OpenAI 客户端
+- 双击图标（或右键菜单「打开 Dashboard」）用默认浏览器打开 Dashboard
+- 右键菜单「打开 config.yaml」打开配置文件
+- 右键菜单「退出」停止服务并退出
 
-将客户端的 OpenAI Base URL 设置为：
+托盘图标取自 `assets/icon.png`；若想换图标，替换该文件即可（建议正方形、透明背景）。
 
-```text
-http://127.0.0.1:3188/v1
+## 配置 Provider
+
+将 `config.yaml.example` 复制为 `config.yaml`，然后按实际 Provider 填写配置。每个 provider 名称也是代理路由的一部分：
+
+```yaml
+providers:
+  openai:
+    type: openai
+    base_url: https://api.openai.com
+    # api_key: sk-xxx
 ```
 
-API Key 仍使用原来的 OpenAI Key。监听器会原样转发 `Authorization` 请求头，但不会写入磁盘或日志。
+`base_url` 不应以 `/v1` 结尾。以 `openai` 为例：
 
-Node SDK 示例：
+- OpenAI Compatible：`http://127.0.0.1:7788/openai/v1/chat/completions`
+- Anthropic Messages：`http://127.0.0.1:7788/openai/v1/messages`
 
-```js
-import OpenAI from "openai";
+当客户端已发送相应认证头时，TokenLens 原样转发；只有客户端未发送认证头时，才使用 `config.yaml` 中的 `api_key` 回退。
 
-const client = new OpenAI({
-  baseURL: "http://127.0.0.1:3188/v1",
-  apiKey: process.env.OPENAI_API_KEY,
-});
+## 验证
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+Push-Location frontend
+npm run build
+Pop-Location
 ```
 
 ## 支持范围
 
-- `POST /v1/responses`：非流式和 SSE 流式；流式会读取 `response.completed` 事件的 usage。
-- `POST /v1/chat/completions`：非流式和 SSE 流式；流式仅在上游返回 usage 时记录。
-- 其他 OpenAI 路径会被透明转发，但不一定产生 token 统计。
-- 仅监听经过本代理的请求，不会监听 ChatGPT 网页或未改 Base URL 的程序。
-
-## 费用与预算
-
-`src/pricing.json` 是可编辑的估算价格表，金额单位为 USD / 1M tokens。面板可设置月度预算；未知模型会显示为“待配置价格”，不会伪造费用。
-
-估算价格不等于 OpenAI 的最终账单；折扣、Batch、工具调用、图像/音频和未来模型价格变动都可能造成差异。请定期按 OpenAI 官方价格页更新价格表。
-
-## 开发检查
-
-```powershell
-node --test
-```
-
+- 统计 OpenAI Compatible 的 `/v1/chat/completions`，包括 SSE 流式请求；流式请求会自动注入 `stream_options.include_usage`。
+- 统计 Anthropic 的 `/v1/messages`，包括 SSE 流式请求。
+- 其余 `/v1/*` 路径会透明转发，但不会产生 Token 用量记录。
+- Dashboard 每 5 秒轮询本地统计 API。

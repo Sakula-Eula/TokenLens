@@ -1,5 +1,6 @@
 import json
 import time
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -7,7 +8,7 @@ from backend.proxy import forwarder
 
 router = APIRouter()
 
-MAX_BODY = 32 * 1024
+MAX_BODY = 32 * 1024 * 1024  # 32MB，与 Anthropic/Claude Code 客户端限制一致（spec 第 7.2 节）
 
 
 def _classify(rest: str) -> str | None:
@@ -21,6 +22,8 @@ def _classify(rest: str) -> str | None:
 @router.api_route("/{provider}/v1/{rest:path}",
                   methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
 async def proxy_endpoint(provider: str, rest: str, request: Request):
+    latency_start = time.perf_counter()
+    created_at = datetime.now().isoformat(timespec="seconds")
     state = request.app.state
     cfg = state.providers.get(provider)
     if cfg is None:
@@ -58,10 +61,13 @@ async def proxy_endpoint(provider: str, rest: str, request: Request):
 
     if is_stream:
         from backend.proxy.stream_proxy import forward_stream
-        return await forward_stream(request, cfg, provider, protocol, endpoint, body, model)
+        return await forward_stream(
+            request, cfg, provider, protocol, endpoint, body, model,
+            latency_start=latency_start, created_at=created_at,
+        )
 
     return await forwarder.forward_non_stream(
         request, client=state.client, cfg=cfg, provider=provider,
         protocol=protocol, endpoint=endpoint, body=body, model=model,
-        latency_start=time.perf_counter(),
+        latency_start=latency_start, created_at=created_at,
     )

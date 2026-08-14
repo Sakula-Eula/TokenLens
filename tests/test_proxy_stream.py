@@ -63,6 +63,21 @@ async def test_stream_passthrough_and_usage_record(app, client):
 
 
 @pytest.mark.asyncio
+async def test_stream_closes_upstream_response_after_completion(app, client):
+    captured = {}
+
+    def handler(request):
+        response = sse_response([b'data: [DONE]\n\n'])
+        captured["response"] = response
+        return response
+
+    _set_upstream(app, handler)
+    response = await client.post("/provider_a/v1/chat/completions", json={"model": "m", "stream": True})
+    assert response.status_code == 200
+    assert captured["response"].is_closed
+
+
+@pytest.mark.asyncio
 async def test_stream_error_chunk_recorded(app, client):
     database.init_db(app.state.db_path)
 

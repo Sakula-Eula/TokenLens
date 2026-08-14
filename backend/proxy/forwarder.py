@@ -18,7 +18,7 @@ from backend.usage.openai_parser import parse_usage as parse_openai
 
 
 def build_record(*, request_id, provider, model, endpoint, stream, usage: Usage | None,
-                 latency_ms, status_code, error_type=None) -> dict:
+                 latency_ms, status_code, error_type=None, created_at: str | None = None) -> dict:
     u = usage.to_dict() if usage else {}
     return {
         "request_id": request_id,
@@ -35,7 +35,7 @@ def build_record(*, request_id, provider, model, endpoint, stream, usage: Usage 
         "status_code": status_code,
         "success": 1 if (200 <= status_code < 300 and error_type is None) else 0,
         "error_type": error_type,
-        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "created_at": created_at or datetime.now().isoformat(timespec="seconds"),
     }
 
 
@@ -55,9 +55,9 @@ def _error_type_from(payload: dict) -> str | None:
 
 
 async def forward_non_stream(request: Request, *, client: httpx.AsyncClient,
-                             cfg: ProviderConfig, provider: str, protocol: str,
-                             endpoint: str, body: dict | None, model: str | None,
-                             latency_start: float) -> Response:
+                              cfg: ProviderConfig, provider: str, protocol: str,
+                              endpoint: str, body: dict | None, model: str | None,
+                              latency_start: float, created_at: str) -> Response:
     headers = forward_request_headers(request.headers, httpx.URL(cfg.base_url).netloc)
     headers = apply_auth_fallback(headers, cfg, protocol)
     target = f"{cfg.base_url}{endpoint}"
@@ -71,7 +71,7 @@ async def forward_non_stream(request: Request, *, client: httpx.AsyncClient,
             request_id=request_id or f"req_{uuid.uuid4().hex[:12]}",
             provider=provider, model=model, endpoint=endpoint,
             stream=False, usage=usage, latency_ms=latency,
-            status_code=status_code, error_type=error_type,
+            status_code=status_code, error_type=error_type, created_at=created_at,
         ))
 
     try:
