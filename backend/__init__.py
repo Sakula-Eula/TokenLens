@@ -22,6 +22,12 @@ def create_app(db_path: Path | None = None, config_path: Path | None = None,
 
     app.state.providers = load_config(app.state.config_path)
 
+    from backend.database.database import init_db
+    from backend.proxy.router import router as proxy_router
+
+    init_db(app.state.db_path)
+    app.include_router(proxy_router)
+
     @app.get("/health")
     async def health():
         return {"status": "ok"}
