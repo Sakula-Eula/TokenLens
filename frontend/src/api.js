@@ -32,3 +32,13 @@ export async function fetchProviderSettings() {
 export async function saveProviderSettings(items) {
   return (await http.put("/api/settings/providers", { items })).data;
 }
+export async function fetchCostSummary(period = "today") { return (await http.get("/api/costs/summary", { params: { period } })).data; }
+export async function fetchCostTrend(period = "month") { return (await http.get("/api/costs/trend", { params: { period } })).data; }
+export async function fetchCostModels(period = "month", limit = 50) { return (await http.get("/api/costs/models", { params: { period, limit } })).data; }
+export async function fetchCostProviders(period = "month", limit = 50) { return (await http.get("/api/costs/providers", { params: { period, limit } })).data; }
+export async function fetchUnpricedModels(period = "month") { return (await http.get("/api/costs/unpriced", { params: { period } })).data; }
+export async function fetchPricingRules() { return (await http.get("/api/pricing/rules")).data; }
+export async function createPricingRule(item) { return (await http.post("/api/pricing/rules", item)).data; }
+export async function updatePricingRule(id, item) { return (await http.put(`/api/pricing/rules/${id}`, item)).data; }
+export async function deletePricingRule(id) { await http.delete(`/api/pricing/rules/${id}`); }
+export async function previewPricingRule(item) { return (await http.post("/api/pricing/rules/preview", item)).data; }

@@ -29,11 +29,15 @@ def create_app(db_path: Path | None = None, config_path: Path | None = None,
     app.include_router(proxy_router)
 
     from backend.api.requests import router as requests_router
+    from backend.api.costs import router as costs_router
+    from backend.api.pricing import router as pricing_router
     from backend.api.settings import router as settings_router
     from backend.api.stats import router as stats_router
 
     app.include_router(stats_router)
     app.include_router(requests_router)
+    app.include_router(costs_router)
+    app.include_router(pricing_router)
     app.include_router(settings_router)
 
     @app.get("/health")
@@ -48,7 +52,7 @@ def create_app(db_path: Path | None = None, config_path: Path | None = None,
         async def frontend_app():
             return FileResponse(dist / "index.html")
 
-        for route_path in ("/", "/dashboard", "/models", "/providers", "/tokens",
+        for route_path in ("/", "/dashboard", "/models", "/providers", "/tokens", "/costs",
                            "/requests", "/errors", "/settings", "/widget"):
             app.add_api_route(route_path, frontend_app, methods=["GET"], include_in_schema=False)
         assets = dist / "assets"

@@ -1105,7 +1105,7 @@ MVP 验证成功后加入：
 
 ### V0.2
 
-**费用统计**：增加模型价格表，计算 `input cost + output cost + cache cost`，展示今日消费、本月消费、模型消费排行、Provider 消费排行。
+**费用统计（基础版已实现）**：模型价格规则和请求费用快照按人民币统计 `input cost + output cost + cache read cost + cache write cost`，展示今日消费、本月消费、模型消费排行、Provider 消费排行及未定价用量。阶梯价、账单对账和费用修正仍属于后续能力。
 
 **项目来源**：支持 Codex、Claude Code、DocMind、RAG System 等来源区分。例如请求 Header `X-TokenLens-Client: codex`，最终可以分析"Codex 今天用了 3.2M Token"。
 

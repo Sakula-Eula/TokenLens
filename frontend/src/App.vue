@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppIcon from "./components/AppIcon.vue";
+import logoUrl from "./assets/logo.png";
 
 const route = useRoute();
 const router = useRouter();
@@ -17,6 +18,7 @@ const navigation = [
   { id: "models", path: "/models", label: "模型", icon: "grid" },
   { id: "providers", path: "/providers", label: "供应商", icon: "providers" },
   { id: "tokens", path: "/tokens", label: "Token", icon: "wallet" },
+  { id: "costs", path: "/costs", label: "费用", icon: "coins" },
   { id: "requests", path: "/requests", label: "请求", icon: "request" },
   { id: "errors", path: "/errors", label: "错误", icon: "alert" },
   { id: "settings", path: "/settings", label: "设置", icon: "settings" },
@@ -47,7 +49,7 @@ async function manualRefresh() {
 <template>
   <div class="app-shell">
     <aside class="sidebar">
-      <div class="brand"><span class="brand-mark"><AppIcon name="logo" :size="26" /></span><span>TokenLens</span></div>
+      <div class="brand"><span class="brand-mark"><img :src="logoUrl" alt="TokenLens" /></span><span>TokenLens</span></div>
       <nav class="side-nav" aria-label="主导航">
         <RouterLink v-for="item in navigation" :key="item.id" :to="item.path" :class="{ active: route.name === item.id }"><AppIcon :name="item.icon" :size="19" /><span>{{ item.label }}</span></RouterLink>
       </nav>
@@ -55,7 +57,7 @@ async function manualRefresh() {
 
     <section class="workspace">
       <header class="topbar">
-        <div class="mobile-brand"><span class="brand-mark"><AppIcon name="logo" :size="22" /></span><strong>TokenLens</strong></div>
+        <div class="mobile-brand"><span class="brand-mark"><img :src="logoUrl" alt="TokenLens" /></span><strong>TokenLens</strong></div>
         <div class="toolbar">
           <label v-if="route.meta.range" class="range-select"><select v-model="range" aria-label="统计时间范围"><option value="24h">最近24小时</option><option value="7d">最近7天</option><option value="30d">最近30天</option></select><AppIcon name="calendar" :size="16" /></label>
           <label class="auto-refresh"><span>自动刷新</span><input v-model="autoRefresh" type="checkbox" /><span class="switch" aria-hidden="true"></span></label>
@@ -80,7 +82,7 @@ button, input, select { font: inherit; }button { cursor: pointer; }
 .app-shell { min-height: 100vh; display: flex; }
 .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 20; width: 210px; background: #fff; border-right: 1px solid #e4e9f1; }
 .brand { height: 76px; display: flex; align-items: center; gap: 12px; padding: 0 26px; font-size: 20px; font-weight: 750; letter-spacing: -.4px; }
-.brand-mark { width: 31px; height: 31px; border-radius: 7px; display: grid; place-items: center; color: #fff; background: linear-gradient(145deg, #3987ff, #1260ee); box-shadow: 0 5px 12px #1768f035; }
+.brand-mark { width: 31px; height: 31px; display: block; flex: 0 0 auto; overflow: hidden; border-radius: 7px; }.brand-mark img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .side-nav { padding: 2px 6px; }.side-nav a { position: relative; width: 100%; height: 47px; display: flex; align-items: center; gap: 15px; padding: 0 25px; border-radius: 7px; color: #42526d; background: transparent; font-size: 14px; text-align: left; text-decoration: none; }.side-nav a:hover { color: #1769ef; background: #f4f7fc; }.side-nav a.active { color: #1769ef; background: #eef4ff; font-weight: 650; }.side-nav a.active::before { content: ""; position: absolute; left: -3px; top: 0; bottom: 0; width: 3px; border-radius: 3px; background: #2476f5; }
 .workspace { min-width: 0; flex: 1; margin-left: 210px; }.topbar { height: 76px; display: flex; align-items: center; justify-content: flex-end; padding: 0 38px; border-bottom: 1px solid #edf0f5; background: rgba(255,255,255,.76); backdrop-filter: blur(12px); }.mobile-brand { display: none; align-items: center; gap: 9px; }.toolbar { display: flex; align-items: center; gap: 24px; }
 .range-select { position: relative; display: flex; align-items: center; }.range-select select { width: 145px; height: 38px; appearance: none; border: 1px solid #dfe5ed; border-radius: 7px; padding: 0 38px 0 13px; color: #344054; outline: none; background: #fff; }.range-select .app-icon { position: absolute; right: 12px; color: #667085; pointer-events: none; }

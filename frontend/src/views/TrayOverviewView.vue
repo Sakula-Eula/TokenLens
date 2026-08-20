@@ -1,7 +1,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import TrayIcon from "../components/TrayIcon.vue";
-import { POLL_INTERVAL_MS, fetchModels, fetchSummary, fetchTrend } from "../api";
+import { POLL_INTERVAL_MS, fetchCostModels, fetchCostSummary, fetchModels, fetchSummary, fetchTrend } from "../api";
+import logoUrl from "../assets/logo.png";
 
 const summary = ref({ requests: 1284, total_tokens: 8420000, avg_latency_ms: 4200 });
 const models = ref([
@@ -11,15 +12,17 @@ const models = ref([
 ]);
 const trend = ref([22,29,27,25,20,18,30,17,13,28,20,14,8,6,5,20,32,17,12,9,20,29,18,12,7,12,20,25,18,27,16,10,25,34,18,11,22,38,20,10,31,15,7,21,29,24,13,9,16,24,31,25,15,11,12,17,26,35,31,18,9,6]);
 const refreshing = ref(false);
+const costSummary = ref({ total_cost_micros: 0 });
+const modelCosts = ref([]);
 const pinned = ref(true);
 let timer = null;
 
 const totalTokens = computed(() => Number(summary.value.total_tokens) || 0);
-const estimatedCost = computed(() => totalTokens.value / 1_000_000 * 1.482);
+const estimatedCost = computed(() => Number(costSummary.value.total_cost_micros || 0) / 1_000_000);
 const topModels = computed(() => {
   const total = Math.max(1, models.value.reduce((sum, item) => sum + Number(item.total_tokens || 0), 0));
   const tones = ["deepseek", "openai", "claude"];
-  return models.value.slice(0, 3).map((item, index) => ({ ...item, tone: tones[index], percent: Math.round(Number(item.total_tokens || 0) / total * 100), cost: estimatedCost.value * Number(item.total_tokens || 0) / total }));
+  return models.value.slice(0, 3).map((item, index) => ({ ...item, tone: tones[index], percent: Math.round(Number(item.total_tokens || 0) / total * 100), cost: Number(modelCosts.value.find(cost => cost.model === item.model)?.total_cost_micros || 0) / 1_000_000 }));
 });
 const bars = computed(() => { const max = Math.max(1, ...trend.value.map(Number)); return trend.value.map((value) => Math.max(10, Number(value) / max * 100)); });
 
@@ -29,10 +32,12 @@ async function refresh() {
   if (refreshing.value) return;
   refreshing.value = true;
   try {
-    const [summaryData, modelData, trendData] = await Promise.all([fetchSummary("24h"), fetchModels("24h"), fetchTrend("24h")]);
+    const [summaryData, modelData, trendData, costData, costModels] = await Promise.all([fetchSummary("24h"), fetchModels("24h"), fetchTrend("24h"), fetchCostSummary("today"), fetchCostModels("today", 20)]);
     summary.value = summaryData;
     models.value = modelData.items || [];
     trend.value = (trendData.items || []).map((item) => Number(item.total_tokens) || 0);
+    costSummary.value = costData;
+    modelCosts.value = costModels.items || [];
   } catch { /* Keep the last successful data visible. */ }
   finally { refreshing.value = false; }
 }
@@ -44,7 +49,7 @@ onBeforeUnmount(() => clearInterval(timer));
 <template>
   <div class="tray-page">
     <header class="tray-header">
-      <div class="tray-brand"><span class="logo-box"><TrayIcon name="logo" :size="29" /></span><strong>TokenLens</strong></div>
+      <div class="tray-brand"><span class="logo-box"><img :src="logoUrl" alt="TokenLens" /></span><strong>TokenLens</strong></div>
       <div class="header-actions">
         <button type="button" aria-label="刷新" title="刷新" @click="refresh"><TrayIcon name="refresh" :size="29" :class="{ spinning: refreshing }" /></button>
         <button type="button" aria-label="固定" title="固定" :class="{ selected: pinned }" @click="pinned = !pinned"><TrayIcon name="pin" :size="28" /></button>
@@ -59,7 +64,7 @@ onBeforeUnmount(() => clearInterval(timer));
 
     <section class="metrics card">
       <article><span class="metric-symbol purple"><TrayIcon name="coins" :size="27" /></span><div><small>今日 Token</small><strong>{{ fmt(totalTokens) }}</strong><p>较昨日 <em>↑ 12.6%</em></p></div></article>
-      <article><span class="metric-symbol orange"><TrayIcon name="wallet" :size="26" /></span><div><small>今日费用</small><strong>¥{{ estimatedCost.toFixed(2) }}</strong><p>较昨日 <em>↓ 8.3%</em></p></div></article>
+      <article><span class="metric-symbol orange"><TrayIcon name="wallet" :size="26" /></span><div><small>今日费用</small><strong>¥{{ estimatedCost.toFixed(2) }}</strong><p v-if="costSummary.unpriced_requests"><em>{{ costSummary.unpriced_requests }} 条未定价</em></p><p v-else>价格覆盖率 100%</p></div></article>
       <article><span class="metric-symbol green"><TrayIcon name="send" :size="26" /></span><div><small>请求数</small><strong>{{ fmt(summary.requests) }}</strong><p>较昨日 <em>↑ 5.1%</em></p></div></article>
       <article><span class="metric-symbol blue"><TrayIcon name="clock" :size="24" /></span><div><small>平均耗时</small><strong>{{ (Number(summary.avg_latency_ms || 0) / 1000).toFixed(1) }}s</strong><p>较昨日 <em>↑ 0.7s</em></p></div></article>
     </section>
@@ -84,7 +89,7 @@ onBeforeUnmount(() => clearInterval(timer));
 * { box-sizing: border-box; }
 .tray-page { width: min(713px, 100vw); min-height: 738px; margin: 0 auto; padding: 0 13px 3px; color: #1a2232; background: radial-gradient(circle at 35% 0, #fff 0, #f5f8fc 52%, #eef3f9 100%); font-family: Inter, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; }
 button { display: flex; align-items: center; gap: 5px; border: 0; padding: 0; color: #1c71ef; background: transparent; font: inherit; font-weight: 650; cursor: pointer; }
-.tray-header { height: 88px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }.tray-brand { display: flex; align-items: center; gap: 17px; }.tray-brand strong { color: #0b0e15; font-size: 27px; line-height: 1; letter-spacing: -.7px; }.logo-box { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 9px; color: #fff; background: linear-gradient(145deg, #3989ff, #0958e9); box-shadow: 0 5px 12px rgba(23,104,240,.22); }.header-actions { display: flex; align-items: center; gap: 29px; }.header-actions button { width: 40px; height: 42px; display: grid; place-items: center; color: #0f141e; }.header-actions button:hover, .header-actions button.selected { color: #1f6df0; }.spinning { animation: spin .7s linear infinite; }
+.tray-header { height: 88px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }.tray-brand { display: flex; align-items: center; gap: 17px; }.tray-brand strong { color: #0b0e15; font-size: 27px; line-height: 1; letter-spacing: -.7px; }.logo-box { width: 42px; height: 42px; display: block; flex: 0 0 auto; overflow: hidden; border-radius: 9px; }.logo-box img { display: block; width: 100%; height: 100%; object-fit: cover; }.header-actions { display: flex; align-items: center; gap: 29px; }.header-actions button { width: 40px; height: 42px; display: grid; place-items: center; color: #0f141e; }.header-actions button:hover, .header-actions button.selected { color: #1f6df0; }.spinning { animation: spin .7s linear infinite; }
 .card { border: 1px solid #e8ecf2; border-radius: 13px; background: rgba(255,255,255,.94); box-shadow: 0 3px 13px rgba(32,59,91,.035); }.summary-heading { height: 68px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }.summary-heading > div { display: flex; align-items: center; gap: 16px; }.summary-heading strong { font-size: 20px; letter-spacing: -.3px; }.summary-heading button { font-size: 17px; }.clock-dot { width: 29px; height: 29px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: #2675f4; }
 .metrics { min-height: 137px; display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 1px; padding: 26px 22px; }.metrics article { min-width: 0; display: flex; gap: 12px; }.metrics article + article { border-left: 1px solid #e8ecf2; padding-left: 16px; }.metric-symbol { width: 43px; height: 43px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 10px; }.metric-symbol.purple { color: #853bee; background: #f5efff; }.metric-symbol.orange { color: #ff771e; background: #fff4ea; }.metric-symbol.green { color: #10b66b; background: #eaf9f1; }.metric-symbol.blue { color: #176ef0; background: #eef5ff; }.metrics small { display: block; color: #69758a; font-size: 14px; white-space: nowrap; }.metrics strong { display: block; margin-top: 5px; color: #192131; font-size: 24px; line-height: 1; letter-spacing: -.45px; white-space: nowrap; }.metrics p { margin: 10px 0 0; color: #6c7789; font-size: 14px; white-space: nowrap; }.metrics em { color: #0eb867; font-style: normal; font-weight: 650; }
 .ranking { margin-top: 16px; padding: 0 23px 14px; }.ranking > header { height: 61px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e9edf2; }.ranking h1 { margin: 0; font-size: 20px; letter-spacing: -.45px; }.ranking > header button { font-size: 17px; }.model-row { min-height: 84px; display: grid; grid-template-columns: 58px 1fr 140px; align-items: center; gap: 17px; border-bottom: 1px solid #e9edf2; }.model-logo { width: 56px; height: 56px; display: grid; place-items: center; border: 1px solid #e2e7ef; border-radius: 13px; background: #fff; font-size: 37px; font-weight: 800; line-height: 1; }.model-logo.deepseek { color: #3e70ee; }.model-logo.openai { color: #111; font-size: 41px; }.model-logo.claude { color: #e86632; font-size: 40px; }.model-main { min-width: 0; }.model-main > strong { display: block; overflow: hidden; font-size: 18px; text-overflow: ellipsis; white-space: nowrap; }.progress { display: flex; align-items: center; gap: 17px; margin-top: 14px; }.progress i { height: 8px; max-width: calc(100% - 52px); border-radius: 99px; background: #2675f5; }.progress span { color: #667388; font-size: 16px; }.model-total { display: grid; justify-items: end; gap: 7px; color: #627086; }.model-total strong { font-size: 16px; font-weight: 500; }.model-total span { font-size: 15px; }.ranking footer { padding-top: 19px; }.trend-title { display: flex; justify-content: space-between; color: #647188; font-size: 16px; }.trend-title strong { font-weight: 500; }.spark-bars { height: 42px; display: flex; align-items: flex-end; gap: 3px; margin-top: 14px; overflow: hidden; }.spark-bars i { min-width: 3px; flex: 1; border-radius: 2px 2px 0 0; background: #2d7af2; }

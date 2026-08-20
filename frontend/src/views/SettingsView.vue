@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref, watch } from "vue";
 import AppIcon from "../components/AppIcon.vue";
+import PricingRulesEditor from "../components/PricingRulesEditor.vue";
 import { fetchProviderSettings, saveProviderSettings } from "../api";
 
 const props = defineProps({ refreshInterval: { type: Number, default: 10000 } });
@@ -34,7 +35,7 @@ function addProvider() {
 
 function removeProvider(index) {
   const item = providers.value[index];
-  if (item.persisted && !window.confirm(`确定删除 Provider“${item.name}”吗？保存后需重启生效。`)) return;
+  if (item.persisted && !window.confirm(`确定删除 Provider“${item.name}”吗？保存后立即生效。`)) return;
   providers.value.splice(index, 1);
 }
 
@@ -49,7 +50,9 @@ async function save() {
     }));
     const data = await saveProviderSettings(payload);
     providers.value = (data.items || []).map(editable);
-    message.value = "配置已安全保存，请重启 TokenLens 使新配置生效。";
+    message.value = data.restart_required
+      ? "配置已安全保存，请重启 TokenLens 使新配置生效。"
+      : "配置已安全保存并立即生效。";
   } catch (error) {
     errorMessage.value = error?.response?.data?.detail || "配置保存失败，请检查输入";
   } finally { saving.value = false; }
@@ -86,8 +89,9 @@ defineExpose({ refresh });
       </article>
       <div v-if="!providers.length && !loading" class="empty-state"><AppIcon name="providers" :size="32" /><b>尚未配置 Provider</b><span>点击“新增 Provider”添加第一个上游服务。</span></div>
     </section>
+    <PricingRulesEditor />
 
-    <footer><span>配置保存后不会立即热加载，需要重启 TokenLens。</span><button type="button" :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存设置' }}</button></footer>
+    <footer><span>Provider 配置保存后立即生效，无需重启 TokenLens。</span><button type="button" :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存设置' }}</button></footer>
   </div>
 </template>
 

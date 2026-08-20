@@ -302,3 +302,155 @@
 - SQLite 包含搜索使用前置通配符，数据规模显著超过当前万级目标后可能需要 FTS 索引。
 - ECharts 已与应用入口拆分，但共享图表包仍较大，可继续改为按需导入。
 - 项目 `.venv` 启动器仍指向不存在的 Python 安装，本次测试继续使用兼容 Python 临时加载其依赖。
+
+## 2026-08-20：替换项目 Logo
+
+### 背景
+
+用户提供新的蓝色柱状图 PNG Logo，要求在项目中统一替换现有标识。
+
+### 任务拆分
+
+| 阶段 | 任务 | 结果 |
+| --- | --- | --- |
+| 资源 | 替换 Windows 托盘图标并新增前端静态资源 | 已完成 |
+| 界面 | 更新主界面和紧凑浮窗顶部 Logo | 已完成 |
+| 验证 | 执行 Vue 生产构建和差异空白检查 | 已完成 |
+
+### 设计与实施
+
+`assets/icon.png` 已替换为用户提供的 PNG，`tray.py` 将在下次启动时使用它作为 Windows 系统托盘图标。`frontend/src/assets/logo.png` 保存同一图片；`frontend/src/App.vue` 与 `frontend/src/views/TrayOverviewView.vue` 通过 Vite 资源导入在主界面、移动端标题栏和紧凑浮窗顶部显示该 Logo。
+
+Logo 容器保持既有尺寸和圆角，但移除了旧 SVG 标识对应的渐变背景，以完整呈现新图片自身的视觉样式。
+
+### 验证记录
+
+- Vue 构建：在 `frontend/` 执行 `npm run build`，成功转换 662 个模块并生成 `logo-mh1qEJU7.png` 静态资源。
+- 构建警告：现有 ECharts 共享包为 1,034.92 kB（gzip 343.42 kB），仍触发 Vite 500 kB 提示；与本次 Logo 资源无关。
+- `git diff --check`：通过，没有空白错误。
+
+### 已知限制
+
+- Windows 已在运行的托盘进程不会热更新图标，重启 TokenLens 后才会显示新图标。
+
+## 2026-08-20：实现人民币费用估算与请求费用账本
+
+### 背景
+
+TokenLens 已能统计 Token，但 `/widget` 仍使用统一系数估算费用，Dashboard、模型、Provider 和请求详情没有一致的费用口径。本次以个人日常费用查看为目标，实现人民币模型价格规则、请求级不可变费用快照、今日和本月统计，不包含预算、通知或请求阻断。
+
+### 需求澄清
+
+- 模型价格直接以人民币元/百万 Token 配置，不提供运行时汇率。
+- Input、Output、Cache Read 和 Cache Write 分别计价。
+- 支持精确和通配符模型规则，可选 Provider 范围；精确规则和 Provider 专属规则优先。
+- 请求完成时保存单价与费用快照，修改或删除价格规则不改变历史费用。
+- 首次启用时为历史请求回填账本；未匹配规则的请求费用为 0，并显式标记未定价。
+- 费用显示在独立页面、Dashboard、模型/Provider 分析、请求详情和 `/widget`。
+
+### 任务拆分
+
+| 阶段 | 任务 | 结果 |
+| --- | --- | --- |
+| 价格 | 增加内置人民币价格、规则匹配和 CRUD 接口 | 已完成 |
+| 账本 | 增加请求费用快照、历史回填和未定价记录 | 已完成 |
+| 统计 | 增加今日、本月、趋势、模型和 Provider 费用接口 | 已完成 |
+| 页面 | 新增费用分析页和价格规则编辑器 | 已完成 |
+| 集成 | Dashboard、分析页、请求详情和浮窗改用真实账本 | 已完成 |
+| 验证 | Python 测试、Vue 构建和 HTTP 冒烟 | 通过 |
+
+### 设计与实施
+
+#### 价格规则与内置预设
+
+`backend/pricing/defaults.py` 提供 OpenAI、Anthropic 和 DeepSeek 常见模型的初始人民币规则，价格来源于 2026-08-20 检查的官方价格页，并按固定 7.20 CNY/USD 一次性换算后直接保存为人民币。预设只在每个数据库首次初始化时写入，不会在后续启动时覆盖用户修改。
+
+`backend/pricing/matcher.py` 按“精确优先于通配、Provider 专属优先于全局、优先级降序、ID 升序”确定唯一规则。`backend/pricing/service.py` 使用整数微元和 `Decimal` 转换单价，避免二进制浮点累计误差；OpenAI 风格规则可以标记 Input Token 已包含缓存 Token，计算时扣除 Cache Read/Write，避免重复计费。
+
+#### 不可变费用账本与回填
+
+`backend/database/database.py` 新增 `pricing_rules`、`request_costs` 和 `app_metadata`。每次 `insert_request()` 后立即写入价格规则和四类费用快照；价格计算异常不会阻止 Usage 记录落库，缺失账本会在下次初始化时补齐。历史回填只处理没有 `request_costs` 的请求，初始化版本标记避免重复写入内置价格。
+
+`request_costs` 保存规则名称、Provider 范围、模型模式、四类单价、计费 Token、四类费用、总费用和定价状态。删除规则不会删除账本，后续修改价格也不重算旧请求。
+
+#### 费用 API 与统计集成
+
+`backend/database/cost_queries.py` 和 `backend/api/costs.py` 提供 `today`、`month`、`24h`、`7d`、`30d` 的汇总、趋势、模型排行、Provider 排行和未定价列表。`backend/api/pricing.py` 提供规则读取、新增、更新、删除和历史模型匹配预览。原统计接口同步返回 `total_cost_micros` 和未定价请求数，请求详情包含嵌套费用快照。
+
+#### 前端费用体验
+
+`frontend/src/views/CostsView.vue` 新增 `/costs` 页面，展示今日、本月、当前周期费用、覆盖率、费用构成、趋势、排行和未定价模型。`PricingRulesEditor.vue` 集成到设置页，可编辑 Provider 范围、模型模式、四类单价、Input/Cache 口径、优先级和启用状态，并预览历史模型匹配结果。
+
+Dashboard 增加当前周期费用和未定价警告；模型和 Provider 表增加费用与未定价数量；`RequestDetailDrawer.vue` 展示实际价格与费用快照。`TrayOverviewView.vue` 删除统一费用系数和虚构费用同比，改为读取今日费用和模型费用接口。
+
+### 交互边界
+
+- 页面所有金额均标记为估算费用，不等同于 Provider 最终账单。
+- 失败请求没有 Usage 时费用可能为 0；客户端中断时若已取得 Usage，仍按记录的 Token 估算。
+- 新增或修改规则只影响后续请求；匹配预览不会重算历史费用。
+- 未定价请求仍保存完整 Token 统计，费用为 0，并计入覆盖率和未定价列表。
+- 本阶段不支持阶梯价、长上下文加价、Batch/Fast 服务层级、税费、折扣或人工费用修正。
+
+### 验证记录
+
+- 官方来源核对：OpenAI API Pricing、Anthropic Pricing、DeepSeek Models & Pricing，检查日期为 2026-08-20。
+- Python 测试：通过捆绑 Python 临时加载 `.venv/Lib/site-packages` 执行 `pytest -q`，结果为 `74 passed in 3.58s`。
+- Vue 构建：在 `frontend/` 执行 `npm run build`，Vite 成功转换 668 个模块；应用入口包为 165.13 kB（gzip 62.96 kB）。
+- 构建警告：ECharts 共享包为 1,034.92 kB（gzip 343.42 kB），仍触发 Vite 500 kB 警告；现有 Logo 资源为 1,501.39 kB。
+- HTTP 冒烟：临时数据库实例运行于 `127.0.0.1:7791`，`/costs`、`/settings`、`/widget` 及全部费用和价格读取接口均返回 HTTP 200。
+- 费用测试覆盖：匹配优先级、缓存 Token 去重、整数金额、快照不可变、未定价记录、一次性预设、历史补账、费用 CRUD、代理流式/非流式账本和 SPA 路由。
+- 浏览器视觉检查未执行：应用内浏览器仍存在已知受信路径配置问题。
+
+### 已知限制
+
+- 内置人民币价格是按一次性汇率换算的初始估算，用户应根据实际 Provider 合同或账单在设置页调整。
+- Claude 1 小时 Cache Write、OpenAI 长上下文/数据驻留、不同服务层级和 DeepSeek 后续调价不能由单条固定规则完整表达。
+- 前端尚无组件测试框架，页面验证依赖生产构建、HTTP 冒烟和响应式样式审查。
+- 项目 `.venv` 启动器仍指向不存在的 Python 安装，测试继续使用兼容 Python 临时加载依赖。
+
+## 2026-08-20：修复 Provider 设置读取与运行时热加载
+
+### 背景
+
+设置页无法显示 `config.yaml` 中已有的 Provider，新增 Provider 也无法保存。排查发现 `127.0.0.1:7788` 上运行的是未包含设置 API 的旧后端进程；同时当前源码虽然能够保存配置，但只在启动时加载一次，新增项仍需再次重启才能参与代理。
+
+### 需求澄清
+
+- 设置页必须显示当前配置的全部 Provider，且不返回已有 API Key 明文。
+- 新增、编辑或删除 Provider 保存成功后立即作用于后续代理请求，无需重启。
+- 保存失败不得替换运行中的 Provider 配置。
+
+### 任务拆分
+
+| 阶段 | 任务 | 结果 |
+| --- | --- | --- |
+| 后端 | 保存成功后热加载运行时 Provider | 已完成 |
+| 前端 | 更新保存和删除提示，明确配置立即生效 | 已完成 |
+| 测试 | 验证新增 Provider 无需重启即可代理请求 | 已完成 |
+| 运行 | 重建前端并重启旧 TokenLens 实例 | 已完成 |
+
+### 设计与实施
+
+`backend/api/settings.py` 先通过现有原子写入逻辑保存 `config.yaml`，随后重新调用 `load_config()`，校验成功后一次性替换 `app.state.providers`。代理路由在每个新请求开始时读取该映射，因此保存后的新增、修改和删除会立即生效；已经开始的请求继续使用其进入路由时取得的配置对象。
+
+`frontend/src/views/SettingsView.vue` 根据接口的 `restart_required` 字段显示保存结果，当前接口返回 `false`；页面底部及删除确认文案同步改为保存后立即生效。
+
+`tests/test_settings_api.py` 使用 `httpx.MockTransport` 隔离上游，在保存新增的 `beta` Provider 后直接请求 `/beta/v1/models`，验证运行时映射和代理路由均已更新。
+
+### 交互边界
+
+- Provider 名称仍只允许字母、数字、点、下划线和连字符；已保存名称在页面中不可直接修改。
+- Base URL 仍不得以 `/v1` 结尾；保存失败时文件校验错误会显示在设置页，运行时继续使用原配置。
+- API Key 继续只返回 `has_api_key` 状态，输入留空保留原值，显式勾选后才会清除。
+
+### 验证记录
+
+- 针对性测试：`tests/test_settings_api.py`、OpenAI 和 Anthropic 代理测试共 `16 passed in 1.10s`。
+- Python 全量测试：`pytest -q` 结果为 `74 passed in 3.58s`。
+- Vue 生产构建：Vite 成功转换 668 个模块并生成生产资源；ECharts 共享包仍有超过 500 kB 的既有警告。
+- 运行实例：旧 PID `47560` 已停止，当前 TokenLens PID 为 `18044`；`/health` 和 `/settings` 返回 HTTP 200，`/api/settings/providers` 返回 `openai`、`anthropic`、`deepseek` 和 `deepseekOpenai` 四项。
+
+### 已知限制
+
+- 设置接口没有独立登录认证，安全边界仍依赖 TokenLens 只监听 `127.0.0.1`。
+- 保存 Provider 会由 PyYAML 标准化 YAML 排版，执行实际保存时原注释仍可能丢失。

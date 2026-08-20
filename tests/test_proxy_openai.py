@@ -57,6 +57,7 @@ async def test_openai_non_stream_proxy_and_record(app, client):
     assert rec["request_id"] == "req_up_1"
     assert rec["endpoint"] == "/v1/chat/completions"
     assert rec["stream"] == 0
+    assert rec["priced"] == 1 and rec["total_cost_micros"] > 0
 
 
 def test_build_record_preserves_request_start_time():

@@ -60,6 +60,7 @@ async def test_stream_passthrough_and_usage_record(app, client):
     rec = queries.query_requests({})["items"][0]
     assert rec["stream"] == 1 and rec["input_tokens"] == 10 and rec["total_tokens"] == 15
     assert rec["success"] == 1 and rec["request_id"] == "req_s1"
+    assert rec["priced"] == 0 and rec["total_cost_micros"] == 0
 
 
 @pytest.mark.asyncio

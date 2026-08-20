@@ -10,7 +10,7 @@ def _row_to_dict(row) -> dict:
 RANGE_KEYS = ("24h", "7d", "30d")
 GROUP_SORT_FIELDS = {
     "requests", "input_tokens", "output_tokens", "cache_tokens",
-    "total_tokens", "avg_latency_ms", "errors", "error_rate",
+    "total_tokens", "total_cost_micros", "avg_latency_ms", "errors", "error_rate",
 }
 
 
@@ -34,7 +34,9 @@ def _summary(where: str, params: tuple | list) -> dict:
                    COALESCE(SUM(cache_read_tokens), 0) +
                      COALESCE(SUM(cache_write_tokens), 0) AS cache_tokens,
                    COALESCE(SUM(total_tokens), 0) AS total_tokens,
-                   COALESCE(AVG(latency_ms), 0) AS avg_latency_ms
+                   COALESCE(AVG(latency_ms), 0) AS avg_latency_ms,
+                   COALESCE(SUM((SELECT total_cost_micros FROM request_costs c WHERE c.request_row_id = api_requests.id)), 0) AS total_cost_micros,
+                   COALESCE(SUM(CASE WHEN COALESCE((SELECT priced FROM request_costs c WHERE c.request_row_id = api_requests.id), 0) = 0 THEN 1 ELSE 0 END), 0) AS unpriced_requests
             FROM api_requests WHERE {where}""",
         params,
     ).fetchone()
@@ -143,6 +145,8 @@ def grouped_stats(column: str, filters: dict, limit: int = 50, offset: int = 0,
                    COALESCE(SUM(total_tokens), 0) AS total_tokens,
                    COALESCE(AVG(latency_ms), 0) AS avg_latency_ms,
                    COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) AS errors,
+                   COALESCE(SUM((SELECT total_cost_micros FROM request_costs c WHERE c.request_row_id = api_requests.id)), 0) AS total_cost_micros,
+                   COALESCE(SUM(CASE WHEN COALESCE((SELECT priced FROM request_costs c WHERE c.request_row_id = api_requests.id), 0) = 0 THEN 1 ELSE 0 END), 0) AS unpriced_requests,
                    CASE WHEN COUNT(*) = 0 THEN 0 ELSE
                      ROUND(COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) * 100.0 / COUNT(*), 2)
                    END AS error_rate
@@ -172,6 +176,7 @@ def trend_stats(range_key: str, filters: dict | None = None) -> list[dict]:
                    COALESCE(SUM(cache_write_tokens), 0) AS cache_write_tokens,
                    COALESCE(SUM(cache_read_tokens), 0) + COALESCE(SUM(cache_write_tokens), 0) AS cache_tokens,
                    COALESCE(SUM(total_tokens), 0) AS total_tokens
+                   ,COALESCE(SUM((SELECT total_cost_micros FROM request_costs c WHERE c.request_row_id = api_requests.id)), 0) AS total_cost_micros
             FROM api_requests{clause}
             GROUP BY bucket ORDER BY bucket""",
         params,
@@ -209,7 +214,9 @@ def query_requests(filters: dict) -> dict:
     conn = get_connection()
     total = conn.execute(f"SELECT COUNT(*) FROM api_requests{clause}", params).fetchone()[0]
     rows = conn.execute(
-        f"SELECT * FROM api_requests{clause} ORDER BY id DESC LIMIT ? OFFSET ?",
+        f"""SELECT api_requests.*, c.total_cost_micros, c.priced
+            FROM api_requests LEFT JOIN request_costs c ON c.request_row_id = api_requests.id
+            {clause} ORDER BY api_requests.id DESC LIMIT ? OFFSET ?""",
         [*params, limit, offset],
     ).fetchall()
     return {"items": [_row_to_dict(r) for r in rows], "total": total}
@@ -217,4 +224,9 @@ def query_requests(filters: dict) -> dict:
 
 def get_request(request_id: int) -> dict | None:
     row = get_connection().execute("SELECT * FROM api_requests WHERE id = ?", (request_id,)).fetchone()
-    return _row_to_dict(row) if row else None
+    if not row:
+        return None
+    result = _row_to_dict(row)
+    cost = get_connection().execute("SELECT * FROM request_costs WHERE request_row_id = ?", (request_id,)).fetchone()
+    result["cost"] = _row_to_dict(cost) if cost else None
+    return result

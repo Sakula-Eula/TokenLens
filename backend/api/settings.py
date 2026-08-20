@@ -3,7 +3,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from backend.config import public_providers, save_providers
+from backend.config import load_config, public_providers, save_providers
 
 router = APIRouter()
 
@@ -34,6 +34,7 @@ async def update_providers(payload: ProviderSettings, request: Request):
     try:
         items = [item.model_dump() if hasattr(item, "model_dump") else item.dict() for item in payload.items]
         save_providers(request.app.state.config_path, items)
+        request.app.state.providers = load_config(request.app.state.config_path)
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"items": public_providers(request.app.state.config_path), "restart_required": True}
+    return {"items": public_providers(request.app.state.config_path), "restart_required": False}

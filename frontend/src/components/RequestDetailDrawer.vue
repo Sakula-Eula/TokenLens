@@ -23,6 +23,7 @@ window.addEventListener("keydown", onKey);
 onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 
 function fmt(value) { return (Number(value) || 0).toLocaleString("zh-CN"); }
+function money(value) { return `¥${(Number(value || 0) / 1_000_000).toFixed(6)}`; }
 </script>
 
 <template>
@@ -40,6 +41,7 @@ function fmt(value) { return (Number(value) || 0).toLocaleString("zh-CN"); }
         <div><dt>Total Token</dt><dd>{{ fmt(item.total_tokens) }}</dd></div><div><dt>耗时</dt><dd>{{ (Number(item.latency_ms || 0) / 1000).toFixed(2) }}s</dd></div>
         <div><dt>状态码</dt><dd :class="item.success ? 'success' : 'failure'">{{ item.status_code }}</dd></div><div><dt>结果</dt><dd :class="item.success ? 'success' : 'failure'">{{ item.success ? '成功' : '失败' }}</dd></div>
         <div class="wide"><dt>Error Type</dt><dd class="failure">{{ item.error_type || '—' }}</dd></div>
+        <template v-if="item.cost"><div class="wide cost-title"><dt>费用快照</dt><dd :class="item.cost.priced ? 'success' : 'failure'">{{ item.cost.priced ? item.cost.rule_name : '未定价，费用按 ¥0 统计' }}</dd></div><div><dt>Input 单价 / 费用</dt><dd>{{ money(item.cost.input_price_micros) }} / MTok · {{ money(item.cost.input_cost_micros) }}</dd></div><div><dt>Output 单价 / 费用</dt><dd>{{ money(item.cost.output_price_micros) }} / MTok · {{ money(item.cost.output_cost_micros) }}</dd></div><div><dt>Cache Read 单价 / 费用</dt><dd>{{ money(item.cost.cache_read_price_micros) }} / MTok · {{ money(item.cost.cache_read_cost_micros) }}</dd></div><div><dt>Cache Write 单价 / 费用</dt><dd>{{ money(item.cost.cache_write_price_micros) }} / MTok · {{ money(item.cost.cache_write_cost_micros) }}</dd></div><div class="wide"><dt>总费用</dt><dd><strong>{{ money(item.cost.total_cost_micros) }}</strong></dd></div></template>
       </dl>
     </aside>
   </div></Teleport>
