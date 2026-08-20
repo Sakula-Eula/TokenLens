@@ -115,6 +115,29 @@ async def test_body_too_large_413(app, client):
 
 
 @pytest.mark.asyncio
+async def test_passthrough_models_auth_fallback(tmp_path):
+    (tmp_path / "config.yaml").write_text(
+        "providers:\n  provider_a:\n    type: openai\n"
+        "    base_url: https://api.example.com\n    api_key: sk-fallback\n",
+        encoding="utf-8",
+    )
+    app = create_app(db_path=tmp_path / "test.db", config_path=tmp_path / "config.yaml")
+
+    def handler(request):
+        assert request.headers.get("authorization") == "Bearer sk-fallback"
+        return httpx.Response(200, json={"object": "list", "data": [{"id": "gpt-5.6-sol"}]})
+
+    app.state.client = httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=30.0)
+    database.init_db(app.state.db_path)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+        resp = await c.get("/provider_a/v1/models")
+    assert resp.status_code == 200
+    assert resp.json()["data"][0]["id"] == "gpt-5.6-sol"
+    assert queries.query_requests({})["total"] == 0
+
+
+@pytest.mark.asyncio
 async def test_passthrough_models_without_record(app, client):
     def handler(request):
         return httpx.Response(200, json={"object": "list", "data": []})

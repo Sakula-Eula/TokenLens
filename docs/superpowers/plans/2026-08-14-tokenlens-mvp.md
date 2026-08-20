@@ -22,7 +22,7 @@
 - 逐 chunk 透传，不缓存完整响应（spec 第 7 章）。
 - 转发请求时移除 `Accept-Encoding`，转发响应时移除 `Content-Encoding`（spec 第 6.2 节）。
 - 仅 `/v1/chat/completions` 与 `/v1/messages` 产生统计记录，其余 `/{provider}/v1/*` 路径透传不统计（spec 第 6.6 节）。
-- 现有 Node.js 原型（`src/`、`test/usage.test.js`、README 中的 ModelMeter）**保留不动**，仅作为 SSE 解析逻辑参考，不参与 Python 实现。
+- 早期 Node.js 原型已在 Python MVP 验证完成后移除，仓库只保留 FastAPI 后端和 Vue Dashboard 主线。
 - 提交信息格式：`feat:` / `fix:` / `test:` 前缀 + 简短英文描述。
 
 ---

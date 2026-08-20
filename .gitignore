@@ -2,6 +2,8 @@ node_modules/
 data/
 coverage/
 .env
+config.yaml
+.idea/
 
 __pycache__/
 .venv/
@@ -11,4 +13,3 @@ frontend/node_modules/
 *.db
 *.db-wal
 *.db-shm
-

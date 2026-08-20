@@ -114,6 +114,9 @@ async def forward_non_stream(request: Request, *, client: httpx.AsyncClient,
 async def forward_passthrough(request: Request, cfg: ProviderConfig,
                               endpoint: str, raw_body: bytes) -> Response:
     headers = forward_request_headers(request.headers, httpx.URL(cfg.base_url).netloc)
+    # 与 forward_non_stream 一致：客户端未带鉴权头时，用 config 里的 api_key 兜底，
+    # 否则 /v1/models 等透传路径会在上游 401（cfg.type 即 openai/anthropic）。
+    headers = apply_auth_fallback(headers, cfg, cfg.type)
     target = f"{cfg.base_url}{endpoint}"
     if request.url.query:
         target += f"?{request.url.query}"

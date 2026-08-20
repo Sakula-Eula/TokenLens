@@ -1,6 +1,6 @@
 import axios from "axios";
 
-export const POLL_INTERVAL_MS = 5000;
+export const POLL_INTERVAL_MS = 30000;
 const http = axios.create({ baseURL: "/", timeout: 10000 });
 
 export async function fetchSummary() {
