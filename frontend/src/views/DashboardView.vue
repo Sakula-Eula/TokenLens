@@ -2,33 +2,22 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as echarts from "echarts";
 import AppIcon from "../components/AppIcon.vue";
-import { POLL_INTERVAL_MS, fetchModels, fetchProviders, fetchRequests, fetchSummary, fetchTrend } from "../api";
+import ApiStateBanner from "../components/ApiStateBanner.vue";
+import RequestDetailDrawer from "../components/RequestDetailDrawer.vue";
+import { fetchModels, fetchProviders, fetchRequests, fetchSummary, fetchTrend } from "../api";
 
-const props = defineProps({
-  range: { type: String, default: "24h" },
-  autoRefresh: { type: Boolean, default: true },
-});
+const props = defineProps({ range: { type: String, default: "24h" }, autoRefresh: { type: Boolean, default: true }, refreshInterval: { type: Number, default: 10000 } });
 const emit = defineEmits(["open-errors"]);
-
 const summary = ref({ requests: 0, success: 0, total_tokens: 0, input_tokens: 0, output_tokens: 0, cache_tokens: 0, errors: 0, error_rate: 0, avg_latency_ms: 0 });
-const models = ref([]);
-const providers = ref([]);
-const recentRequests = ref([]);
-const trendItems = ref([]);
-const loading = ref(true);
-const updatedAt = ref("");
-const trendEl = ref(null);
-const distributionEl = ref(null);
+const models = ref([]); const providers = ref([]); const recentRequests = ref([]); const trendItems = ref([]);
+const loading = ref(true); const updatedAt = ref(""); const loadError = ref(""); const detailId = ref(null); const trendEl = ref(null); const distributionEl = ref(null);
 const sectionRefs = { models: ref(null), providers: ref(null), distribution: ref(null), alerts: ref(null) };
-let trendChart = null;
-let distributionChart = null;
-let timer = null;
+let trendChart = null; let distributionChart = null; let timer = null;
 
 const providerColors = ["#2677f4", "#20b77a", "#7a4fd0", "#ff7a18", "#13a7bd", "#9aa4b2"];
-const successRate = computed(() => summary.value.requests ? (summary.value.success / summary.value.requests * 100) : 0);
+const successRate = computed(() => summary.value.requests ? summary.value.success / summary.value.requests * 100 : 0);
 const totalProviderTokens = computed(() => providers.value.reduce((sum, item) => sum + item.total_tokens, 0));
 const maxProviderTokens = computed(() => Math.max(1, ...providers.value.map((item) => item.total_tokens)));
-
 const metricCards = computed(() => [
   { label: "总 Token", value: fmt(summary.value.total_tokens), note: `输入 ${fmt(summary.value.input_tokens)}`, icon: "coins", tone: "purple" },
   { label: "输入 Token", value: fmt(summary.value.input_tokens), note: `${tokenPercent(summary.value.input_tokens)}% 总用量`, icon: "wallet", tone: "blue" },
@@ -39,197 +28,60 @@ const metricCards = computed(() => [
   { label: "平均耗时", value: `${(summary.value.avg_latency_ms / 1000).toFixed(1)}s`, note: latencyText(), icon: "clock", tone: "orange" },
   { label: "错误数", value: fmt(summary.value.errors), note: `错误率 ${Number(summary.value.error_rate).toFixed(1)}%`, icon: "alert", tone: "red" },
 ]);
-
 const alerts = computed(() => [
-  summary.value.errors > 0
-    ? { tone: "red", icon: "alert", title: `检测到 ${summary.value.errors} 次错误`, text: `当前错误率为 ${Number(summary.value.error_rate).toFixed(1)}%`, time: "当前周期" }
-    : { tone: "green", icon: "check", title: "请求运行正常", text: "当前周期内没有检测到错误", time: "当前周期" },
-  summary.value.avg_latency_ms > 4000
-    ? { tone: "orange", icon: "clock", title: "平均耗时偏高", text: `当前平均耗时 ${(summary.value.avg_latency_ms / 1000).toFixed(1)}s`, time: "实时" }
-    : { tone: "blue", icon: "clock", title: "响应耗时稳定", text: `平均耗时 ${(summary.value.avg_latency_ms / 1000).toFixed(1)}s`, time: "实时" },
+  summary.value.errors > 0 ? { tone: "red", icon: "alert", title: `检测到 ${summary.value.errors} 次错误`, text: `当前错误率为 ${Number(summary.value.error_rate).toFixed(1)}%`, time: "当前周期" } : { tone: "green", icon: "check", title: "请求运行正常", text: "当前周期内没有检测到错误", time: "当前周期" },
+  summary.value.avg_latency_ms > 4000 ? { tone: "orange", icon: "clock", title: "平均耗时偏高", text: `当前平均耗时 ${(summary.value.avg_latency_ms / 1000).toFixed(1)}s`, time: "实时" } : { tone: "blue", icon: "clock", title: "响应耗时稳定", text: `平均耗时 ${(summary.value.avg_latency_ms / 1000).toFixed(1)}s`, time: "实时" },
   { tone: "green", icon: "check", title: `成功率 ${successRate.value.toFixed(1)}%`, text: `已完成 ${fmt(summary.value.success)} 次成功请求`, time: "今日" },
 ]);
 
-function fmt(value) {
-  const n = Number(value) || 0;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 100_000 ? 0 : 1)}K`;
-  return n.toLocaleString("zh-CN");
-}
-
-function tokenPercent(value) {
-  return summary.value.total_tokens ? (value / summary.value.total_tokens * 100).toFixed(1) : "0.0";
-}
-
-function latencyText() {
-  if (summary.value.avg_latency_ms > 4000) return "建议关注响应时间";
-  if (summary.value.avg_latency_ms > 0) return "响应时间稳定";
-  return "暂无请求数据";
-}
-
-function providerPercent(value) {
-  return totalProviderTokens.value ? (value / totalProviderTokens.value * 100).toFixed(1) : "0.0";
-}
-
-function timeOnly(value) {
-  if (!value) return "--:--:--";
-  const match = String(value).match(/(?:T|\s)(\d{2}:\d{2}:\d{2})/);
-  return match ? match[1] : String(value).slice(-8);
-}
+function fmt(value) { const n = Number(value) || 0; if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`; if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 100_000 ? 0 : 1)}K`; return n.toLocaleString("zh-CN"); }
+function tokenPercent(value) { return summary.value.total_tokens ? (value / summary.value.total_tokens * 100).toFixed(1) : "0.0"; }
+function latencyText() { if (summary.value.avg_latency_ms > 4000) return "建议关注响应时间"; if (summary.value.avg_latency_ms > 0) return "响应时间稳定"; return "暂无请求数据"; }
+function providerPercent(value) { return totalProviderTokens.value ? (value / totalProviderTokens.value * 100).toFixed(1) : "0.0"; }
+function timeOnly(value) { if (!value) return "--:--:--"; const match = String(value).match(/(?:T|\s)(\d{2}:\d{2}:\d{2})/); return match ? match[1] : String(value).slice(-8); }
 
 function updateCharts() {
-  if (trendChart) {
-    trendChart.setOption({
-      animationDuration: 500,
-      color: ["#2677f4"],
-      grid: { left: 18, right: 18, top: 30, bottom: 20, containLabel: true },
-      tooltip: { trigger: "axis", backgroundColor: "#fff", borderColor: "#e3e9f2", textStyle: { color: "#344054", fontSize: 12 }, extraCssText: "box-shadow:0 8px 24px rgba(16,24,40,.12);border-radius:8px" },
-      xAxis: { type: "category", boundaryGap: false, data: trendItems.value.map((item) => item.bucket.slice(5).replace("T", " ")), axisLine: { lineStyle: { color: "#e8edf4" } }, axisTick: { show: false }, axisLabel: { color: "#7b879b", fontSize: 11, hideOverlap: true } },
-      yAxis: { type: "value", splitNumber: 4, axisLabel: { color: "#7b879b", fontSize: 11, formatter: (value) => fmt(value) }, splitLine: { lineStyle: { color: "#edf1f6", type: "dashed" } } },
-      series: [{ name: "总 Token", type: "line", smooth: .3, symbol: "circle", symbolSize: 5, showSymbol: false, lineStyle: { width: 2 }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: "rgba(38,119,244,.22)" }, { offset: 1, color: "rgba(38,119,244,.01)" }]) }, data: trendItems.value.map((item) => item.total_tokens) }],
-    }, true);
-  }
-  if (distributionChart) {
-    distributionChart.setOption({
-      animationDuration: 500,
-      color: providerColors,
-      tooltip: { trigger: "item", formatter: ({ name, value, percent }) => `${name}<br/>${fmt(value)} Token (${percent}%)` },
-      series: [{ type: "pie", radius: ["59%", "78%"], center: ["50%", "50%"], avoidLabelOverlap: true, itemStyle: { borderColor: "#fff", borderWidth: 2 }, label: { show: false }, data: providers.value.map((item) => ({ name: item.provider, value: item.total_tokens })) }],
-      graphic: [{ type: "text", left: "center", top: "42%", style: { text: fmt(totalProviderTokens.value), fill: "#101828", fontSize: 20, fontWeight: 700, textAlign: "center" } }, { type: "text", left: "center", top: "55%", style: { text: "总 Token", fill: "#7b879b", fontSize: 12, textAlign: "center" } }],
-    }, true);
-  }
+  trendChart?.setOption({ animationDuration: 500, color: ["#2677f4"], grid: { left: 18, right: 18, top: 30, bottom: 20, containLabel: true }, tooltip: { trigger: "axis", backgroundColor: "#fff", borderColor: "#e3e9f2", textStyle: { color: "#344054", fontSize: 12 }, extraCssText: "box-shadow:0 8px 24px rgba(16,24,40,.12);border-radius:8px" }, xAxis: { type: "category", boundaryGap: false, data: trendItems.value.map((item) => item.bucket.slice(5).replace("T", " ")), axisLine: { lineStyle: { color: "#e8edf4" } }, axisTick: { show: false }, axisLabel: { color: "#7b879b", fontSize: 11, hideOverlap: true } }, yAxis: { type: "value", splitNumber: 4, axisLabel: { color: "#7b879b", fontSize: 11, formatter: (value) => fmt(value) }, splitLine: { lineStyle: { color: "#edf1f6", type: "dashed" } } }, series: [{ name: "总 Token", type: "line", smooth: .3, symbol: "circle", symbolSize: 5, showSymbol: false, lineStyle: { width: 2 }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: "rgba(38,119,244,.22)" }, { offset: 1, color: "rgba(38,119,244,.01)" }]) }, data: trendItems.value.map((item) => item.total_tokens) }] }, true);
+  distributionChart?.setOption({ animationDuration: 500, color: providerColors, tooltip: { trigger: "item", formatter: ({ name, value, percent }) => `${name}<br/>${fmt(value)} Token (${percent}%)` }, series: [{ type: "pie", radius: ["59%", "78%"], center: ["50%", "50%"], avoidLabelOverlap: true, itemStyle: { borderColor: "#fff", borderWidth: 2 }, label: { show: false }, data: providers.value.map((item) => ({ name: item.provider, value: item.total_tokens })) }], graphic: [{ type: "text", left: "center", top: "42%", style: { text: fmt(totalProviderTokens.value), fill: "#101828", fontSize: 20, fontWeight: 700, textAlign: "center" } }, { type: "text", left: "center", top: "55%", style: { text: "总 Token", fill: "#7b879b", fontSize: 12, textAlign: "center" } }] }, true);
 }
 
 async function refresh() {
   try {
-    const [summaryData, modelData, providerData, trendData, requestData] = await Promise.all([
-      fetchSummary(props.range), fetchModels(props.range), fetchProviders(props.range), fetchTrend(props.range), fetchRequests({ limit: 5, offset: 0 }),
-    ]);
-    summary.value = summaryData;
-    models.value = modelData.items || [];
-    providers.value = providerData.items || [];
-    trendItems.value = trendData.items || [];
-    recentRequests.value = requestData.items || [];
-    updatedAt.value = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-    await nextTick();
-    updateCharts();
-  } catch { /* Polling failures keep the last successful dashboard visible. */ }
-  finally { loading.value = false; }
+    const [summaryData, modelData, providerData, trendData, requestData] = await Promise.all([fetchSummary(props.range), fetchModels(props.range), fetchProviders(props.range), fetchTrend(props.range), fetchRequests({ limit: 5, offset: 0 })]);
+    summary.value = summaryData; models.value = modelData.items || []; providers.value = providerData.items || []; trendItems.value = trendData.items || []; recentRequests.value = requestData.items || []; updatedAt.value = new Date().toLocaleTimeString("zh-CN", { hour12: false }); loadError.value = ""; await nextTick(); updateCharts();
+  } catch (error) { loadError.value = error?.response?.data?.detail || "Dashboard 数据更新失败"; } finally { loading.value = false; }
 }
-
-function configureTimer() {
-  clearInterval(timer);
-  timer = props.autoRefresh ? setInterval(refresh, POLL_INTERVAL_MS) : null;
-}
-
-function handleResize() {
-  trendChart?.resize(); distributionChart?.resize();
-}
-
-function scrollToSection(name) {
-  sectionRefs[name]?.value?.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-onMounted(() => {
-  trendChart = echarts.init(trendEl.value);
-  distributionChart = echarts.init(distributionEl.value);
-  window.addEventListener("resize", handleResize);
-  configureTimer();
-  refresh();
-});
-onBeforeUnmount(() => {
-  clearInterval(timer); window.removeEventListener("resize", handleResize); trendChart?.dispose(); distributionChart?.dispose();
-});
-watch(() => props.range, refresh);
-watch(() => props.autoRefresh, configureTimer);
-defineExpose({ refresh, scrollToSection });
+function configureTimer() { clearInterval(timer); timer = props.autoRefresh ? setInterval(refresh, props.refreshInterval) : null; }
+function handleResize() { trendChart?.resize(); distributionChart?.resize(); }
+function scrollToSection(name) { sectionRefs[name]?.value?.scrollIntoView({ behavior: "smooth", block: "start" }); }
+onMounted(() => { trendChart = echarts.init(trendEl.value); distributionChart = echarts.init(distributionEl.value); window.addEventListener("resize", handleResize); configureTimer(); refresh(); });
+onBeforeUnmount(() => { clearInterval(timer); window.removeEventListener("resize", handleResize); trendChart?.dispose(); distributionChart?.dispose(); });
+watch(() => props.range, refresh); watch(() => [props.autoRefresh, props.refreshInterval], configureTimer); defineExpose({ refresh, scrollToSection });
 </script>
 
 <template>
   <div class="dashboard" :class="{ loading }">
-    <section class="metric-grid">
-      <article v-for="card in metricCards" :key="card.label" class="metric-card">
-        <div class="metric-icon" :class="card.tone"><AppIcon :name="card.icon" :size="25" /></div>
-        <div><div class="metric-label">{{ card.label }}</div><div class="metric-value">{{ card.value }}</div><div class="metric-note">{{ card.note }}</div></div>
-      </article>
-    </section>
-
+    <ApiStateBanner :error="loadError" :updated-at="updatedAt" />
+    <section class="metric-grid"><article v-for="card in metricCards" :key="card.label" class="metric-card"><div class="metric-icon" :class="card.tone"><AppIcon :name="card.icon" :size="25" /></div><div><div class="metric-label">{{ card.label }}</div><div class="metric-value">{{ card.value }}</div><div class="metric-note">{{ card.note }}</div></div></article></section>
     <section class="dashboard-grid top-grid">
-      <article class="panel trend-panel">
-        <div class="panel-heading"><div><h2>Token 使用趋势</h2><p>各时间段累计 Token 用量</p></div><span v-if="updatedAt" class="updated">更新于 {{ updatedAt }}</span></div>
-        <div ref="trendEl" class="trend-chart"></div>
-        <div v-if="!trendItems.length && !loading" class="chart-empty">当前时间范围暂无趋势数据</div>
-      </article>
-
-      <article :ref="sectionRefs.models" class="panel model-panel scroll-target">
-        <div class="panel-heading"><div><h2>模型使用情况</h2><p>按 Token 用量排序</p></div><span class="link-label">{{ models.length }} 个模型</span></div>
-        <div class="table-wrap compact-table">
-          <table>
-            <thead><tr><th>模型</th><th>请求数</th><th>输入 Token</th><th>输出 Token</th><th>Cache</th><th>总 Token</th></tr></thead>
-            <tbody>
-              <tr v-for="item in models.slice(0, 6)" :key="item.model"><td class="strong-cell">{{ item.model }}</td><td>{{ fmt(item.requests) }}</td><td>{{ fmt(item.input_tokens) }}</td><td>{{ fmt(item.output_tokens) }}</td><td>{{ fmt(item.cache_tokens) }}</td><td>{{ fmt(item.total_tokens) }}</td></tr>
-              <tr v-if="!models.length"><td colspan="6" class="empty-cell">暂无模型数据</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </article>
-
-      <article :ref="sectionRefs.distribution" class="panel distribution-panel scroll-target">
-        <div class="panel-heading"><div><h2>Token 分布</h2><p>按供应商统计</p></div></div>
-        <div class="distribution-content"><div ref="distributionEl" class="donut-chart"></div>
-          <div class="legend-list">
-            <div v-for="(item, index) in providers.slice(0, 5)" :key="item.provider" class="legend-item"><i :style="{ background: providerColors[index % providerColors.length] }"></i><span><b>{{ item.provider }}</b><small>{{ fmt(item.total_tokens) }}（{{ providerPercent(item.total_tokens) }}%）</small></span></div>
-            <div v-if="!providers.length" class="empty-legend">暂无数据</div>
-          </div>
-        </div>
-      </article>
+      <article class="panel trend-panel"><div class="panel-heading"><div><h2>Token 使用趋势</h2><p>各时间段累计 Token 用量</p></div><span v-if="updatedAt" class="updated">更新于 {{ updatedAt }}</span></div><div ref="trendEl" class="trend-chart"></div><div v-if="!trendItems.length && !loading" class="chart-empty">当前时间范围暂无趋势数据</div></article>
+      <article :ref="sectionRefs.models" class="panel model-panel scroll-target"><div class="panel-heading"><div><h2>模型使用情况</h2><p>按 Token 用量排序</p></div><RouterLink class="link-label" to="/models">查看全部</RouterLink></div><div class="table-wrap compact-table"><table><thead><tr><th>模型</th><th>请求数</th><th>输入 Token</th><th>输出 Token</th><th>Cache</th><th>总 Token</th></tr></thead><tbody><tr v-for="item in models.slice(0, 6)" :key="item.model"><td class="strong-cell">{{ item.model }}</td><td>{{ fmt(item.requests) }}</td><td>{{ fmt(item.input_tokens) }}</td><td>{{ fmt(item.output_tokens) }}</td><td>{{ fmt(item.cache_tokens) }}</td><td>{{ fmt(item.total_tokens) }}</td></tr><tr v-if="!models.length"><td colspan="6" class="empty-cell">暂无模型数据</td></tr></tbody></table></div></article>
+      <article :ref="sectionRefs.distribution" class="panel distribution-panel scroll-target"><div class="panel-heading"><div><h2>Token 分布</h2><p>按供应商统计</p></div><RouterLink class="link-label" to="/tokens">详细分析</RouterLink></div><div class="distribution-content"><div ref="distributionEl" class="donut-chart"></div><div class="legend-list"><div v-for="(item, index) in providers.slice(0, 5)" :key="item.provider" class="legend-item"><i :style="{ background: providerColors[index % providerColors.length] }"></i><span><b>{{ item.provider }}</b><small>{{ fmt(item.total_tokens) }}（{{ providerPercent(item.total_tokens) }}%）</small></span></div><div v-if="!providers.length" class="empty-legend">暂无数据</div></div></div></article>
     </section>
-
     <section class="dashboard-grid bottom-grid">
-      <article :ref="sectionRefs.providers" class="panel provider-panel scroll-target">
-        <div class="panel-heading"><div><h2>供应商使用情况</h2><p>Token 用量与请求次数</p></div></div>
-        <div class="provider-head"><span>供应商</span><span>Token 占比</span><span>请求数</span><span>总 Token</span></div>
-        <div v-for="(item, index) in providers.slice(0, 6)" :key="item.provider" class="provider-row">
-          <strong>{{ item.provider }}</strong><div class="provider-progress"><div><span :style="{ width: `${item.total_tokens / maxProviderTokens * 100}%`, background: providerColors[index % providerColors.length] }"></span></div><em>{{ providerPercent(item.total_tokens) }}%</em></div><span>{{ fmt(item.requests) }}</span><span>{{ fmt(item.total_tokens) }}</span>
-        </div>
-        <div v-if="!providers.length" class="empty-block">暂无供应商数据</div>
-      </article>
-
-      <article class="panel requests-panel">
-        <div class="panel-heading"><div><h2>最近请求</h2><p>最新的 API 调用记录</p></div><span class="link-label">最近 5 条</span></div>
-        <div class="table-wrap">
-          <table><thead><tr><th>时间</th><th>模型</th><th>Provider</th><th>输入</th><th>输出</th><th>Cache</th><th>耗时</th><th>状态</th></tr></thead>
-            <tbody>
-              <tr v-for="item in recentRequests" :key="item.id"><td>{{ timeOnly(item.created_at) }}</td><td class="strong-cell">{{ item.model || "unknown" }}</td><td>{{ item.provider }}</td><td>{{ fmt(item.input_tokens) }}</td><td>{{ fmt(item.output_tokens) }}</td><td>{{ fmt((item.cache_read_tokens || 0) + (item.cache_write_tokens || 0)) }}</td><td>{{ (item.latency_ms / 1000).toFixed(1) }}s</td><td><span class="status" :class="item.success ? 'success' : 'error'"><i></i>{{ item.success ? "成功" : item.status_code }}</span></td></tr>
-              <tr v-if="!recentRequests.length"><td colspan="8" class="empty-cell">暂无请求记录</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </article>
-
-      <article :ref="sectionRefs.alerts" class="panel alerts-panel scroll-target">
-        <div class="panel-heading"><div><h2>洞察 & 提醒</h2><p>根据实时数据自动生成</p></div></div>
-        <div class="alert-list"><button v-for="alert in alerts" :key="alert.title" type="button" class="alert-item" @click="emit('open-errors')"><span class="alert-icon" :class="alert.tone"><AppIcon :name="alert.icon" :size="22" /></span><span class="alert-copy"><b>{{ alert.title }}</b><small>{{ alert.text }}</small></span><span class="alert-time">{{ alert.time }}</span><AppIcon name="chevron" :size="16" /></button></div>
-      </article>
+      <article :ref="sectionRefs.providers" class="panel provider-panel scroll-target"><div class="panel-heading"><div><h2>供应商使用情况</h2><p>Token 用量与请求次数</p></div><RouterLink class="link-label" to="/providers">查看全部</RouterLink></div><div class="provider-head"><span>供应商</span><span>Token 占比</span><span>请求数</span><span>总 Token</span></div><div v-for="(item, index) in providers.slice(0, 6)" :key="item.provider" class="provider-row"><strong>{{ item.provider }}</strong><div class="provider-progress"><div><span :style="{ width: `${item.total_tokens / maxProviderTokens * 100}%`, background: providerColors[index % providerColors.length] }"></span></div><em>{{ providerPercent(item.total_tokens) }}%</em></div><span>{{ fmt(item.requests) }}</span><span>{{ fmt(item.total_tokens) }}</span></div><div v-if="!providers.length" class="empty-block">暂无供应商数据</div></article>
+      <article class="panel requests-panel"><div class="panel-heading"><div><h2>最近请求</h2><p>最新的 API 调用记录</p></div><RouterLink class="link-label" to="/requests">查看全部</RouterLink></div><div class="table-wrap"><table><thead><tr><th>时间</th><th>模型</th><th>Provider</th><th>输入</th><th>输出</th><th>Cache</th><th>耗时</th><th>状态</th></tr></thead><tbody><tr v-for="item in recentRequests" :key="item.id" class="clickable" @click="detailId = item.id"><td>{{ timeOnly(item.created_at) }}</td><td class="strong-cell">{{ item.model || "unknown" }}</td><td>{{ item.provider }}</td><td>{{ fmt(item.input_tokens) }}</td><td>{{ fmt(item.output_tokens) }}</td><td>{{ fmt((item.cache_read_tokens || 0) + (item.cache_write_tokens || 0)) }}</td><td>{{ (item.latency_ms / 1000).toFixed(1) }}s</td><td><span class="status" :class="item.success ? 'success' : 'error'"><i></i>{{ item.success ? "成功" : item.status_code }}</span></td></tr><tr v-if="!recentRequests.length"><td colspan="8" class="empty-cell">暂无请求记录</td></tr></tbody></table></div></article>
+      <article :ref="sectionRefs.alerts" class="panel alerts-panel scroll-target"><div class="panel-heading"><div><h2>洞察 & 提醒</h2><p>根据实时数据自动生成</p></div></div><div class="alert-list"><button v-for="alert in alerts" :key="alert.title" type="button" class="alert-item" @click="emit('open-errors')"><span class="alert-icon" :class="alert.tone"><AppIcon :name="alert.icon" :size="22" /></span><span class="alert-copy"><b>{{ alert.title }}</b><small>{{ alert.text }}</small></span><span class="alert-time">{{ alert.time }}</span><AppIcon name="chevron" :size="16" /></button></div></article>
     </section>
+    <RequestDetailDrawer :record-id="detailId" @close="detailId = null" />
   </div>
 </template>
 
 <style scoped>
-.dashboard { max-width: 1540px; margin: 0 auto; transition: opacity .2s; }.dashboard.loading { opacity: .78; }
-.metric-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
-.metric-card, .panel { border: 1px solid #e6ebf2; background: #fff; box-shadow: 0 2px 8px rgba(16,24,40,.035); }
-.metric-card { min-height: 112px; display: flex; align-items: center; gap: 16px; padding: 17px; border-radius: 10px; }
-.metric-icon { width: 52px; height: 52px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 14px; }.metric-icon.blue { color: #1769ef; background: #edf4ff; }.metric-icon.purple { color: #7d2ae8; background: #f4edff; }.metric-icon.green { color: #0aac74; background: #e9f9f2; }.metric-icon.emerald { color: #0aa873; background: #e9f9f2; }.metric-icon.orange { color: #f26b13; background: #fff2e8; }.metric-icon.red { color: #ef3434; background: #fff0f0; }
-.metric-label { color: #667085; font-size: 12px; }.metric-value { margin-top: 3px; color: #101828; font-size: 25px; line-height: 1.15; font-weight: 750; letter-spacing: -.5px; }.metric-note { margin-top: 4px; color: #7b879b; font-size: 11px; white-space: nowrap; }
-.dashboard-grid { display: grid; gap: 14px; margin-bottom: 14px; }.top-grid { grid-template-columns: minmax(430px, 1.55fr) minmax(380px, 1.28fr) minmax(285px, .95fr); }.bottom-grid { grid-template-columns: minmax(360px, 1.08fr) minmax(520px, 1.48fr) minmax(285px, .88fr); }
-.panel { min-width: 0; border-radius: 10px; padding: 17px 18px; }.scroll-target { scroll-margin-top: 18px; }
-.panel-heading { min-height: 40px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }.panel-heading h2 { margin: 0; font-size: 15px; line-height: 1.25; }.panel-heading p { margin: 4px 0 0; color: #98a2b3; font-size: 11px; }.updated { color: #98a2b3; font-size: 10px; }.link-label { color: #1769ef; font-size: 11px; white-space: nowrap; }
-.trend-chart { height: 265px; }.chart-empty { height: 0; position: relative; top: -140px; color: #98a2b3; font-size: 12px; text-align: center; pointer-events: none; }
-.table-wrap { width: 100%; overflow-x: auto; }table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }th { color: #7b879b; font-weight: 500; }th, td { height: 38px; padding: 0 8px; border-bottom: 1px solid #edf1f6; text-align: left; }th:first-child, td:first-child { padding-left: 0; }th:last-child, td:last-child { padding-right: 0; }.strong-cell { color: #26344d; font-weight: 650; }.compact-table th, .compact-table td { height: 39px; }.empty-cell { height: 120px; color: #98a2b3; text-align: center; }
-.distribution-content { min-height: 262px; display: flex; align-items: center; gap: 8px; }.donut-chart { width: 57%; height: 230px; }.legend-list { flex: 1; min-width: 110px; }.legend-item { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; }.legend-item i { width: 7px; height: 7px; margin-top: 4px; border-radius: 50%; }.legend-item span { display: grid; gap: 3px; }.legend-item b { color: #344054; font-size: 11px; }.legend-item small { color: #667085; font-size: 10px; }.empty-legend { color: #98a2b3; font-size: 11px; }
-.provider-head, .provider-row { display: grid; grid-template-columns: 1fr 1.8fr .7fr .8fr; align-items: center; gap: 10px; font-size: 11px; }.provider-head { height: 32px; color: #7b879b; border-bottom: 1px solid #edf1f6; }.provider-row { min-height: 44px; border-bottom: 1px solid #edf1f6; }.provider-row strong { overflow: hidden; color: #26344d; text-overflow: ellipsis; }.provider-progress { display: flex; align-items: center; gap: 8px; }.provider-progress > div { flex: 1; height: 7px; overflow: hidden; border-radius: 9px; background: #f0f3f7; }.provider-progress > div span { display: block; height: 100%; border-radius: 9px; }.provider-progress em { width: 36px; color: #667085; font-style: normal; }.empty-block { height: 155px; display: grid; place-items: center; color: #98a2b3; font-size: 12px; }
-.status { display: inline-flex; align-items: center; gap: 5px; }.status i { width: 6px; height: 6px; border-radius: 50%; }.status.success { color: #138a62; }.status.success i { background: #20b77a; }.status.error { color: #df3030; }.status.error i { background: #ef4444; }
+.dashboard { max-width: 1540px; margin: 0 auto; transition: opacity .2s; }.dashboard.loading { opacity: .78; }.metric-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }.metric-card, .panel { border: 1px solid #e6ebf2; background: #fff; box-shadow: 0 2px 8px rgba(16,24,40,.035); }.metric-card { min-height: 112px; display: flex; align-items: center; gap: 16px; padding: 17px; border-radius: 10px; }.metric-icon { width: 52px; height: 52px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 14px; }.metric-icon.blue { color: #1769ef; background: #edf4ff; }.metric-icon.purple { color: #7d2ae8; background: #f4edff; }.metric-icon.green, .metric-icon.emerald { color: #0aac74; background: #e9f9f2; }.metric-icon.orange { color: #f26b13; background: #fff2e8; }.metric-icon.red { color: #ef3434; background: #fff0f0; }.metric-label { color: #667085; font-size: 12px; }.metric-value { margin-top: 3px; color: #101828; font-size: 25px; line-height: 1.15; font-weight: 750; letter-spacing: -.5px; }.metric-note { margin-top: 4px; color: #7b879b; font-size: 11px; white-space: nowrap; }
+.dashboard-grid { display: grid; gap: 14px; margin-bottom: 14px; }.top-grid { grid-template-columns: minmax(430px, 1.55fr) minmax(380px, 1.28fr) minmax(285px, .95fr); }.bottom-grid { grid-template-columns: minmax(360px, 1.08fr) minmax(520px, 1.48fr) minmax(285px, .88fr); }.panel { min-width: 0; border-radius: 10px; padding: 17px 18px; }.scroll-target { scroll-margin-top: 18px; }.panel-heading { min-height: 40px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }.panel-heading h2 { margin: 0; font-size: 15px; line-height: 1.25; }.panel-heading p { margin: 4px 0 0; color: #98a2b3; font-size: 11px; }.updated { color: #98a2b3; font-size: 10px; }.link-label { color: #1769ef; font-size: 11px; white-space: nowrap; text-decoration: none; }.clickable { cursor: pointer; }.clickable:hover { background: #f8fbff; }.trend-chart { height: 265px; }.chart-empty { height: 0; position: relative; top: -140px; color: #98a2b3; font-size: 12px; text-align: center; pointer-events: none; }
+.table-wrap { width: 100%; overflow-x: auto; }table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }th { color: #7b879b; font-weight: 500; }th, td { height: 38px; padding: 0 8px; border-bottom: 1px solid #edf1f6; text-align: left; }th:first-child, td:first-child { padding-left: 0; }th:last-child, td:last-child { padding-right: 0; }.strong-cell { color: #26344d; font-weight: 650; }.compact-table th, .compact-table td { height: 39px; }.empty-cell { height: 120px; color: #98a2b3; text-align: center; }.distribution-content { min-height: 262px; display: flex; align-items: center; gap: 8px; }.donut-chart { width: 57%; height: 230px; }.legend-list { flex: 1; min-width: 110px; }.legend-item { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; }.legend-item i { width: 7px; height: 7px; margin-top: 4px; border-radius: 50%; }.legend-item span { display: grid; gap: 3px; }.legend-item b { color: #344054; font-size: 11px; }.legend-item small { color: #667085; font-size: 10px; }.empty-legend { color: #98a2b3; font-size: 11px; }
+.provider-head, .provider-row { display: grid; grid-template-columns: 1fr 1.8fr .7fr .8fr; align-items: center; gap: 10px; font-size: 11px; }.provider-head { height: 32px; color: #7b879b; border-bottom: 1px solid #edf1f6; }.provider-row { min-height: 44px; border-bottom: 1px solid #edf1f6; }.provider-row strong { overflow: hidden; color: #26344d; text-overflow: ellipsis; }.provider-progress { display: flex; align-items: center; gap: 8px; }.provider-progress > div { flex: 1; height: 7px; overflow: hidden; border-radius: 9px; background: #f0f3f7; }.provider-progress > div span { display: block; height: 100%; border-radius: 9px; }.provider-progress em { width: 36px; color: #667085; font-style: normal; }.empty-block { height: 155px; display: grid; place-items: center; color: #98a2b3; font-size: 12px; }.status { display: inline-flex; align-items: center; gap: 5px; }.status i { width: 6px; height: 6px; border-radius: 50%; }.status.success { color: #138a62; }.status.success i { background: #20b77a; }.status.error { color: #df3030; }.status.error i { background: #ef4444; }
 .alert-list { display: grid; gap: 9px; margin-top: 5px; }.alert-item { width: 100%; min-height: 62px; display: flex; align-items: center; gap: 11px; padding: 9px; border: 1px solid #e7ebf1; border-radius: 8px; text-align: left; background: #fff; }.alert-item:hover { border-color: #b9cef2; background: #f9fbff; }.alert-icon { width: 38px; height: 38px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 10px; }.alert-icon.red { color: #ef3434; background: #fff0f0; }.alert-icon.orange { color: #f26b13; background: #fff2e8; }.alert-icon.green { color: #0aac74; background: #e9f9f2; }.alert-icon.blue { color: #1769ef; background: #edf4ff; }.alert-copy { min-width: 0; flex: 1; display: grid; gap: 4px; }.alert-copy b { overflow: hidden; color: #26344d; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }.alert-copy small { overflow: hidden; color: #7b879b; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }.alert-time { align-self: flex-start; padding-top: 3px; color: #98a2b3; font-size: 9px; white-space: nowrap; }.alert-item > .app-icon { color: #98a2b3; }
 @media (max-width: 1380px) { .top-grid { grid-template-columns: 1.35fr 1fr; }.distribution-panel { grid-column: 1 / -1; }.distribution-content { min-height: 210px; }.donut-chart { height: 200px; }.legend-list { display: grid; grid-template-columns: repeat(3, 1fr); }.bottom-grid { grid-template-columns: 1fr 1.4fr; }.alerts-panel { grid-column: 1 / -1; }.alert-list { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 960px) { .metric-grid { grid-template-columns: repeat(2, 1fr); }.top-grid, .bottom-grid { grid-template-columns: 1fr; }.distribution-panel, .alerts-panel { grid-column: auto; }.alert-list { grid-template-columns: 1fr; } }

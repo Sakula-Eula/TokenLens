@@ -119,3 +119,18 @@ async def test_requests_endpoint_clamps_limit(app, client):
 
     too_large = (await client.get("/api/requests", params={"limit": 999})).json()
     assert too_large["limit"] == 200 and len(too_large["items"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_group_search_sort_trend_and_error_filters(app, client):
+    database.init_db(app.state.db_path)
+    database.insert_request(_record(request_id="a", provider="alpha-one", model="gpt-alpha"))
+    database.insert_request(_record(request_id="b", provider="beta", model="claude-beta",
+                                    total_tokens=600, status_code=500, success=0, error_type="server"))
+    models = (await client.get("/api/stats/models", params={"search": "claude", "limit": 1})).json()
+    assert models["total"] == 1 and models["items"][0]["model"] == "claude-beta"
+    assert (await client.get("/api/stats/models", params={"sort_by": "invalid"})).status_code == 400
+    trend = (await client.get("/api/stats/trend", params={"model": "gpt-alpha"})).json()["items"]
+    assert sum(item["total_tokens"] for item in trend) == 150
+    errors = (await client.get("/api/stats/errors", params={"provider": "bet", "status_group": "5xx"})).json()
+    assert errors["errors"] == 1 and errors["total_requests"] == 1

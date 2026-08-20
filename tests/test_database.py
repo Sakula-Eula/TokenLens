@@ -98,3 +98,30 @@ def test_trend_buckets(tmp_path):
     assert all("bucket" in h and "total_tokens" in h for h in hours)
     days = queries.trend_stats("7d")
     assert len(days) >= 1
+
+
+def test_fuzzy_filters_escape_wildcards_and_status_groups(tmp_path):
+    database.init_db(tmp_path / "test.db")
+    database.insert_request(_record(request_id="literal", provider="alpha%team", model="gpt_special",
+                                    status_code=429, success=0))
+    database.insert_request(_record(request_id="wild", provider="alphaXteam", model="gptXspecial",
+                                    status_code=503, success=0))
+    assert queries.query_requests({"provider_contains": "%"})["items"][0]["request_id"] == "literal"
+    assert queries.query_requests({"model_contains": "_"})["items"][0]["request_id"] == "literal"
+    assert queries.query_requests({"status_group": "4xx"})["total"] == 1
+    assert queries.query_requests({"status_group": "5xx"})["total"] == 1
+
+
+def test_grouped_stats_pagination_sort_and_filtered_trend(tmp_path):
+    database.init_db(tmp_path / "test.db")
+    database.insert_request(_record(model="model-a", provider="provider-a", latency_ms=2000,
+                                    cache_read_tokens=10))
+    database.insert_request(_record(request_id="r2", model="model-b", provider="provider-b",
+                                    total_tokens=500, latency_ms=4000, success=0, status_code=500))
+    groups = queries.grouped_stats("model", queries.filters_for_range("24h"), limit=1,
+                                   sort_by="total_tokens", order="desc")
+    assert groups["total"] == 2 and groups["items"][0]["model"] == "model-b"
+    assert groups["items"][0]["avg_latency_ms"] == 4000
+    trend = queries.trend_stats("24h", {"model": "model-a"})
+    assert sum(item["total_tokens"] for item in trend) == 150
+    assert all({"input_tokens", "output_tokens", "cache_tokens"} <= item.keys() for item in trend)

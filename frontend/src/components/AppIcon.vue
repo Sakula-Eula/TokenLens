@@ -1,8 +1,5 @@
 <script setup>
-defineProps({
-  name: { type: String, required: true },
-  size: { type: [Number, String], default: 20 },
-});
+defineProps({ name: { type: String, required: true }, size: { type: [Number, String], default: 20 } });
 </script>
 
 <template>
@@ -26,6 +23,4 @@ defineProps({
   </svg>
 </template>
 
-<style scoped>
-.app-icon { display: block; flex: 0 0 auto; }
-</style>
+<style scoped>.app-icon { display: block; flex: 0 0 auto; }</style>

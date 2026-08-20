@@ -45,10 +45,14 @@ def create_app(db_path: Path | None = None, config_path: Path | None = None,
 
     dist = ROOT / "frontend" / "dist"
     if (dist / "index.html").exists():
-        @app.get("/dashboard", include_in_schema=False)
-        async def dashboard():
+        async def frontend_app():
             return FileResponse(dist / "index.html")
 
-        app.mount("/", StaticFiles(directory=dist, html=True), name="static")
+        for route_path in ("/", "/dashboard", "/models", "/providers", "/tokens",
+                           "/requests", "/errors", "/settings", "/widget"):
+            app.add_api_route(route_path, frontend_app, methods=["GET"], include_in_schema=False)
+        assets = dist / "assets"
+        if assets.exists():
+            app.mount("/assets", StaticFiles(directory=assets), name="assets")
 
     return app

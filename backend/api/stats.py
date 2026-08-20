@@ -18,20 +18,37 @@ async def summary(range: str = "24h"):
 
 
 @router.get("/api/stats/models")
-async def models(range: str = "24h"):
-    return service.models(_validate_range(range))
+async def models(range: str = "24h", search: str | None = None, limit: int = 50, offset: int = 0,
+                 sort_by: str = "total_tokens", order: str = "desc"):
+    try:
+        return service.models(_validate_range(range), {"model_contains": search},
+                              limit=limit, offset=offset, sort_by=sort_by, order=order)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/api/stats/providers")
-async def providers(range: str = "24h"):
-    return service.providers(_validate_range(range))
+async def providers(range: str = "24h", search: str | None = None, limit: int = 50, offset: int = 0,
+                    sort_by: str = "total_tokens", order: str = "desc"):
+    try:
+        return service.providers(_validate_range(range), {"provider_contains": search},
+                                 limit=limit, offset=offset, sort_by=sort_by, order=order)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/api/stats/trend")
-async def trend(range: str = "24h"):
-    return service.trend(_validate_range(range))
+async def trend(range: str = "24h", provider: str | None = None, model: str | None = None):
+    return service.trend(_validate_range(range), {"provider": provider, "model": model})
 
 
 @router.get("/api/stats/errors")
-async def errors(range: str = "24h"):
-    return service.errors(_validate_range(range))
+async def errors(range: str = "24h", provider: str | None = None, model: str | None = None,
+                 status: int | None = None, status_group: str | None = None,
+                 date_from: str | None = None, date_to: str | None = None):
+    filters = {"provider_contains": provider, "model_contains": model, "status": status,
+               "status_group": status_group, "date_from": date_from, "date_to": date_to}
+    try:
+        return service.errors(_validate_range(range), filters)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

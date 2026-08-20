@@ -8,6 +8,10 @@ def _row_to_dict(row) -> dict:
 
 
 RANGE_KEYS = ("24h", "7d", "30d")
+GROUP_SORT_FIELDS = {
+    "requests", "input_tokens", "output_tokens", "cache_tokens",
+    "total_tokens", "avg_latency_ms", "errors", "error_rate",
+}
 
 
 def range_since(range_key: str) -> str:
@@ -46,81 +50,37 @@ def range_summary(range_key: str) -> dict:
     return _summary("created_at >= ?", (range_since(range_key),))
 
 
-def group_stats(column: str, range_or_date: str) -> list[dict]:
-    """Group request totals for a rolling range or, for compatibility, a date."""
-    assert column in ("model", "provider")
-    if range_or_date in RANGE_KEYS:
-        where, params = "created_at >= ?", (range_since(range_or_date),)
-    else:
-        where, params = "substr(created_at, 1, 10) = ?", (range_or_date,)
-    conn = get_connection()
-    rows = conn.execute(
-        f"""SELECT COALESCE({column}, 'unknown') AS {column},
-                   COUNT(*) AS requests,
-                   COALESCE(SUM(input_tokens), 0) AS input_tokens,
-                   COALESCE(SUM(output_tokens), 0) AS output_tokens,
-                   COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
-                   COALESCE(SUM(cache_write_tokens), 0) AS cache_write_tokens,
-                   COALESCE(SUM(cache_read_tokens), 0) +
-                     COALESCE(SUM(cache_write_tokens), 0) AS cache_tokens,
-                   COALESCE(SUM(total_tokens), 0) AS total_tokens
-            FROM api_requests WHERE {where}
-            GROUP BY {column} ORDER BY total_tokens DESC""",
-        params,
-    ).fetchall()
-    return [_row_to_dict(r) for r in rows]
+def _escape_like(value: str) -> str:
+    return str(value).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def trend_stats(range_key: str) -> list[dict]:
-    assert range_key in RANGE_KEYS
-    if range_key == "24h":
-        bucket_expr = "substr(created_at, 1, 13)"
-    else:
-        bucket_expr = "substr(created_at, 1, 10)"
-    conn = get_connection()
-    rows = conn.execute(
-        f"""SELECT {bucket_expr} AS bucket, COALESCE(SUM(total_tokens), 0) AS total_tokens
-            FROM api_requests WHERE created_at >= ?
-            GROUP BY bucket ORDER BY bucket""",
-        (range_since(range_key),),
-    ).fetchall()
-    return [_row_to_dict(r) for r in rows]
-
-
-def error_stats(range_key: str) -> dict:
-    """Return failure-only status-code and error-type distributions for a range."""
-    since = range_since(range_key)
-    conn = get_connection()
-    by_status = conn.execute(
-        """SELECT COALESCE(status_code, 0) AS status_code, COUNT(*) AS count
-           FROM api_requests WHERE created_at >= ? AND success = 0
-           GROUP BY status_code ORDER BY count DESC, status_code ASC""",
-        (since,),
-    ).fetchall()
-    by_type = conn.execute(
-        """SELECT COALESCE(error_type, 'unknown') AS error_type, COUNT(*) AS count
-           FROM api_requests WHERE created_at >= ? AND success = 0
-           GROUP BY error_type ORDER BY count DESC, error_type ASC""",
-        (since,),
-    ).fetchall()
-    return {
-        "by_status": [_row_to_dict(row) for row in by_status],
-        "by_type": [_row_to_dict(row) for row in by_type],
-    }
-
-
-def query_requests(filters: dict) -> dict:
+def _filter_clause(filters: dict, *, force_failure: bool = False) -> tuple[str, list]:
     where, params = [], []
     if filters.get("provider"):
         where.append("provider = ?")
         params.append(filters["provider"])
+    if filters.get("provider_contains"):
+        where.append("provider LIKE ? ESCAPE '\\'")
+        params.append(f"%{_escape_like(filters['provider_contains'])}%")
     if filters.get("model"):
         where.append("model = ?")
         params.append(filters["model"])
+    if filters.get("model_contains"):
+        where.append("model LIKE ? ESCAPE '\\'")
+        params.append(f"%{_escape_like(filters['model_contains'])}%")
     if filters.get("status") is not None:
         where.append("status_code = ?")
         params.append(int(filters["status"]))
-    if filters.get("success") is not None:
+    if filters.get("status_group"):
+        group = str(filters["status_group"]).lower()
+        if group not in ("2xx", "4xx", "5xx"):
+            raise ValueError("status_group must be 2xx, 4xx or 5xx")
+        start = int(group[0]) * 100
+        where.append("status_code >= ? AND status_code < ?")
+        params.extend((start, start + 100))
+    if force_failure:
+        where.append("success = 0")
+    elif filters.get("success") is not None:
         where.append("success = ?")
         params.append(1 if filters["success"] else 0)
     if filters.get("date_from"):
@@ -129,7 +89,121 @@ def query_requests(filters: dict) -> dict:
     if filters.get("date_to"):
         where.append("created_at < ?")
         params.append(filters["date_to"])
-    clause = (" WHERE " + " AND ".join(where)) if where else ""
+    return ((" WHERE " + " AND ".join(where)) if where else ""), params
+
+
+def filters_for_range(range_key: str, filters: dict | None = None) -> dict:
+    assert range_key in RANGE_KEYS
+    result = dict(filters or {})
+    if not result.get("date_from"):
+        result["date_from"] = range_since(range_key)
+    return result
+
+
+def filtered_summary(filters: dict) -> dict:
+    clause, params = _filter_clause(filters)
+    return _summary(clause.removeprefix(" WHERE ") or "1 = 1", params)
+
+
+def group_stats(column: str, range_or_date: str) -> list[dict]:
+    """Group request totals for a rolling range or, for compatibility, a date."""
+    assert column in ("model", "provider")
+    if range_or_date in RANGE_KEYS:
+        where, params = "created_at >= ?", (range_since(range_or_date),)
+    else:
+        where, params = "substr(created_at, 1, 10) = ?", (range_or_date,)
+    legacy_filters = {"date_from": params[0]} if range_or_date in RANGE_KEYS else {"calendar_date": params[0]}
+    return grouped_stats(column, legacy_filters, limit=10000)["items"]
+
+
+def grouped_stats(column: str, filters: dict, limit: int = 50, offset: int = 0,
+                  sort_by: str = "total_tokens", order: str = "desc") -> dict:
+    assert column in ("model", "provider")
+    if sort_by not in GROUP_SORT_FIELDS:
+        raise ValueError(f"unsupported sort field: {sort_by}")
+    order = order.lower()
+    if order not in ("asc", "desc"):
+        raise ValueError("order must be asc or desc")
+    filters = dict(filters)
+    calendar_date = filters.pop("calendar_date", None)
+    clause, params = _filter_clause(filters)
+    if calendar_date:
+        calendar = "substr(created_at, 1, 10) = ?"
+        clause = f"{clause} {'AND' if clause else 'WHERE'} {calendar}"
+        params.append(calendar_date)
+    key_expr = f"COALESCE({column}, 'unknown')"
+    from_where = f"FROM api_requests{clause}"
+    select = f"""SELECT {key_expr} AS {column},
+                   COUNT(*) AS requests,
+                   COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                   COALESCE(SUM(output_tokens), 0) AS output_tokens,
+                   COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
+                   COALESCE(SUM(cache_write_tokens), 0) AS cache_write_tokens,
+                   COALESCE(SUM(cache_read_tokens), 0) + COALESCE(SUM(cache_write_tokens), 0) AS cache_tokens,
+                   COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                   COALESCE(AVG(latency_ms), 0) AS avg_latency_ms,
+                   COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) AS errors,
+                   CASE WHEN COUNT(*) = 0 THEN 0 ELSE
+                     ROUND(COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) * 100.0 / COUNT(*), 2)
+                   END AS error_rate
+            {from_where} GROUP BY {key_expr}"""
+    conn = get_connection()
+    total = conn.execute(f"SELECT COUNT(*) FROM (SELECT 1 {from_where} GROUP BY {key_expr})", params).fetchone()[0]
+    limit = max(1, min(int(limit), 200))
+    offset = max(int(offset), 0)
+    rows = conn.execute(f"{select} ORDER BY {sort_by} {order.upper()}, {column} ASC LIMIT ? OFFSET ?", [*params, limit, offset]).fetchall()
+    return {"items": [_row_to_dict(row) for row in rows], "total": total, "limit": limit, "offset": offset}
+
+
+def trend_stats(range_key: str, filters: dict | None = None) -> list[dict]:
+    assert range_key in RANGE_KEYS
+    if range_key == "24h":
+        bucket_expr = "substr(created_at, 1, 13)"
+    else:
+        bucket_expr = "substr(created_at, 1, 10)"
+    scoped = filters_for_range(range_key, filters)
+    clause, params = _filter_clause(scoped)
+    conn = get_connection()
+    rows = conn.execute(
+        f"""SELECT {bucket_expr} AS bucket,
+                   COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                   COALESCE(SUM(output_tokens), 0) AS output_tokens,
+                   COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
+                   COALESCE(SUM(cache_write_tokens), 0) AS cache_write_tokens,
+                   COALESCE(SUM(cache_read_tokens), 0) + COALESCE(SUM(cache_write_tokens), 0) AS cache_tokens,
+                   COALESCE(SUM(total_tokens), 0) AS total_tokens
+            FROM api_requests{clause}
+            GROUP BY bucket ORDER BY bucket""",
+        params,
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def error_stats(range_key: str, filters: dict | None = None) -> dict:
+    """Return failure-only status-code and error-type distributions for a range."""
+    scoped = filters_for_range(range_key, filters)
+    clause, params = _filter_clause(scoped, force_failure=True)
+    conn = get_connection()
+    by_status = conn.execute(
+        f"""SELECT COALESCE(status_code, 0) AS status_code, COUNT(*) AS count
+           FROM api_requests{clause}
+           GROUP BY status_code ORDER BY count DESC, status_code ASC""",
+        params,
+    ).fetchall()
+    by_type = conn.execute(
+        f"""SELECT COALESCE(error_type, 'unknown') AS error_type, COUNT(*) AS count
+           FROM api_requests{clause}
+           GROUP BY error_type ORDER BY count DESC, error_type ASC""",
+        params,
+    ).fetchall()
+    return {
+        "by_status": [_row_to_dict(row) for row in by_status],
+        "by_type": [_row_to_dict(row) for row in by_type],
+    }
+
+
+def query_requests(filters: dict) -> dict:
+    clause, params = _filter_clause(filters)
     limit = max(1, min(int(filters.get("limit", 50)), 200))
     offset = max(int(filters.get("offset", 0)), 0)
     conn = get_connection()
@@ -139,3 +213,8 @@ def query_requests(filters: dict) -> dict:
         [*params, limit, offset],
     ).fetchall()
     return {"items": [_row_to_dict(r) for r in rows], "total": total}
+
+
+def get_request(request_id: int) -> dict | None:
+    row = get_connection().execute("SELECT * FROM api_requests WHERE id = ?", (request_id,)).fetchone()
+    return _row_to_dict(row) if row else None
