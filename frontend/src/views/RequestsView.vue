@@ -4,7 +4,7 @@ import AppIcon from "../components/AppIcon.vue";
 import { POLL_INTERVAL_MS, fetchRequests } from "../api";
 
 const props = defineProps({ autoRefresh: { type: Boolean, default: true } });
-const filters = ref({ provider: "", model: "", status: "" });
+const filters = ref({ provider: "", model: "", status: "", date_from: "", date_to: "" });
 const page = ref(1);
 const data = ref({ items: [], total: 0 });
 const loading = ref(true);
@@ -12,14 +12,15 @@ let timer = null;
 
 async function refresh() {
   const params = { limit: 50, offset: (page.value - 1) * 50 };
-  for (const key of ["provider", "model"]) if (filters.value[key]) params[key] = filters.value[key];
+  for (const key of ["provider", "model", "date_from"]) if (filters.value[key]) params[key] = filters.value[key];
+  if (filters.value.date_to) params.date_to = dayAfter(filters.value.date_to);
   if (filters.value.status !== "") params.status = Number(filters.value.status);
   try { data.value = await fetchRequests(params); } catch { /* Keep the last successful result visible. */ }
   finally { loading.value = false; }
 }
 
 function resetFilters() {
-  filters.value = { provider: "", model: "", status: "" };
+  filters.value = { provider: "", model: "", status: "", date_from: "", date_to: "" };
 }
 
 function configureTimer() {
@@ -29,6 +30,14 @@ function configureTimer() {
 
 function fmt(value) { return (Number(value) || 0).toLocaleString("zh-CN"); }
 function formatTime(value) { return value ? String(value).replace("T", " ").slice(0, 19) : "—"; }
+function dayAfter(value) {
+  const date = new Date(`${value}T00:00:00`);
+  date.setDate(date.getDate() + 1);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 onMounted(() => { refresh(); configureTimer(); });
 onBeforeUnmount(() => clearInterval(timer));
@@ -49,19 +58,21 @@ defineExpose({ refresh });
       <div class="filters">
         <label><span>供应商</span><input v-model.trim="filters.provider" placeholder="输入 Provider" /></label>
         <label><span>模型</span><input v-model.trim="filters.model" placeholder="输入模型名称" /></label>
-        <label><span>状态</span><select v-model="filters.status"><option value="">全部状态</option><option value="200">200 成功</option><option value="429">429 限流</option><option value="500">500 错误</option></select></label>
+        <label><span>状态</span><select v-model="filters.status"><option value="">全部状态</option><option v-for="code in [200, 400, 401, 403, 404, 408, 429, 500, 502, 503, 504]" :key="code" :value="String(code)">{{ code }}</option></select></label>
+        <label><span>开始日期</span><input v-model="filters.date_from" type="date" :max="filters.date_to || undefined" /></label>
+        <label><span>结束日期</span><input v-model="filters.date_to" type="date" :min="filters.date_from || undefined" /></label>
         <button class="reset-button" type="button" @click="resetFilters"><AppIcon name="refresh" :size="15" />重置</button>
       </div>
 
       <div class="table-wrap">
         <table>
-          <thead><tr><th>时间</th><th>Provider</th><th>模型</th><th>输入 Token</th><th>输出 Token</th><th>总 Token</th><th>耗时</th><th>状态</th></tr></thead>
+          <thead><tr><th>时间</th><th>Provider</th><th>模型</th><th>输入 Token</th><th>输出 Token</th><th>Cache Token</th><th>总 Token</th><th>耗时</th><th>状态</th></tr></thead>
           <tbody>
             <tr v-for="item in data.items" :key="item.id">
-              <td class="time-cell">{{ formatTime(item.created_at) }}</td><td><span class="provider-badge">{{ item.provider }}</span></td><td class="model-cell">{{ item.model || "unknown" }}</td><td>{{ fmt(item.input_tokens) }}</td><td>{{ fmt(item.output_tokens) }}</td><td class="total-cell">{{ fmt(item.total_tokens) }}</td><td>{{ (item.latency_ms / 1000).toFixed(1) }}s</td>
+              <td class="time-cell">{{ formatTime(item.created_at) }}</td><td><span class="provider-badge">{{ item.provider }}</span></td><td class="model-cell">{{ item.model || "unknown" }}</td><td>{{ fmt(item.input_tokens) }}</td><td>{{ fmt(item.output_tokens) }}</td><td>{{ fmt((item.cache_read_tokens || 0) + (item.cache_write_tokens || 0)) }}</td><td class="total-cell">{{ fmt(item.total_tokens) }}</td><td>{{ (item.latency_ms / 1000).toFixed(1) }}s</td>
               <td><span class="status" :class="item.success ? 'success' : 'error'"><i></i>{{ item.success ? "成功" : item.status_code }}</span></td>
             </tr>
-            <tr v-if="!data.items.length"><td colspan="8" class="empty-cell">{{ loading ? "正在加载请求记录…" : "没有符合条件的请求记录" }}</td></tr>
+            <tr v-if="!data.items.length"><td colspan="9" class="empty-cell">{{ loading ? "正在加载请求记录…" : "没有符合条件的请求记录" }}</td></tr>
           </tbody>
         </table>
       </div>

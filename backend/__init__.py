@@ -29,10 +29,12 @@ def create_app(db_path: Path | None = None, config_path: Path | None = None,
     app.include_router(proxy_router)
 
     from backend.api.requests import router as requests_router
+    from backend.api.settings import router as settings_router
     from backend.api.stats import router as stats_router
 
     app.include_router(stats_router)
     app.include_router(requests_router)
+    app.include_router(settings_router)
 
     @app.get("/health")
     async def health():

@@ -8,8 +8,9 @@ const props = defineProps({
   range: { type: String, default: "24h" },
   autoRefresh: { type: Boolean, default: true },
 });
+const emit = defineEmits(["open-errors"]);
 
-const summary = ref({ requests: 0, success: 0, total_tokens: 0, input_tokens: 0, output_tokens: 0, errors: 0, error_rate: 0, avg_latency_ms: 0 });
+const summary = ref({ requests: 0, success: 0, total_tokens: 0, input_tokens: 0, output_tokens: 0, cache_tokens: 0, errors: 0, error_rate: 0, avg_latency_ms: 0 });
 const models = ref([]);
 const providers = ref([]);
 const recentRequests = ref([]);
@@ -31,6 +32,8 @@ const maxProviderTokens = computed(() => Math.max(1, ...providers.value.map((ite
 const metricCards = computed(() => [
   { label: "总 Token", value: fmt(summary.value.total_tokens), note: `输入 ${fmt(summary.value.input_tokens)}`, icon: "coins", tone: "purple" },
   { label: "输入 Token", value: fmt(summary.value.input_tokens), note: `${tokenPercent(summary.value.input_tokens)}% 总用量`, icon: "wallet", tone: "blue" },
+  { label: "输出 Token", value: fmt(summary.value.output_tokens), note: `${tokenPercent(summary.value.output_tokens)}% 总用量`, icon: "send", tone: "green" },
+  { label: "Cache Token", value: fmt(summary.value.cache_tokens), note: `读 ${fmt(summary.value.cache_read_tokens)} · 写 ${fmt(summary.value.cache_write_tokens)}`, icon: "coins", tone: "purple" },
   { label: "请求数", value: fmt(summary.value.requests), note: "当前统计周期", icon: "send", tone: "green" },
   { label: "成功率", value: `${successRate.value.toFixed(1)}%`, note: `${fmt(summary.value.success)} 次成功`, icon: "check", tone: "emerald" },
   { label: "平均耗时", value: `${(summary.value.avg_latency_ms / 1000).toFixed(1)}s`, note: latencyText(), icon: "clock", tone: "orange" },
@@ -100,7 +103,7 @@ function updateCharts() {
 async function refresh() {
   try {
     const [summaryData, modelData, providerData, trendData, requestData] = await Promise.all([
-      fetchSummary(), fetchModels(), fetchProviders(), fetchTrend(props.range), fetchRequests({ limit: 5, offset: 0 }),
+      fetchSummary(props.range), fetchModels(props.range), fetchProviders(props.range), fetchTrend(props.range), fetchRequests({ limit: 5, offset: 0 }),
     ]);
     summary.value = summaryData;
     models.value = modelData.items || [];
@@ -162,10 +165,10 @@ defineExpose({ refresh, scrollToSection });
         <div class="panel-heading"><div><h2>模型使用情况</h2><p>按 Token 用量排序</p></div><span class="link-label">{{ models.length }} 个模型</span></div>
         <div class="table-wrap compact-table">
           <table>
-            <thead><tr><th>模型</th><th>请求数</th><th>输入 Token</th><th>输出 Token</th><th>总 Token</th></tr></thead>
+            <thead><tr><th>模型</th><th>请求数</th><th>输入 Token</th><th>输出 Token</th><th>Cache</th><th>总 Token</th></tr></thead>
             <tbody>
-              <tr v-for="item in models.slice(0, 6)" :key="item.model"><td class="strong-cell">{{ item.model }}</td><td>{{ fmt(item.requests) }}</td><td>{{ fmt(item.input_tokens) }}</td><td>{{ fmt(item.output_tokens) }}</td><td>{{ fmt(item.total_tokens) }}</td></tr>
-              <tr v-if="!models.length"><td colspan="5" class="empty-cell">暂无模型数据</td></tr>
+              <tr v-for="item in models.slice(0, 6)" :key="item.model"><td class="strong-cell">{{ item.model }}</td><td>{{ fmt(item.requests) }}</td><td>{{ fmt(item.input_tokens) }}</td><td>{{ fmt(item.output_tokens) }}</td><td>{{ fmt(item.cache_tokens) }}</td><td>{{ fmt(item.total_tokens) }}</td></tr>
+              <tr v-if="!models.length"><td colspan="6" class="empty-cell">暂无模型数据</td></tr>
             </tbody>
           </table>
         </div>
@@ -195,10 +198,10 @@ defineExpose({ refresh, scrollToSection });
       <article class="panel requests-panel">
         <div class="panel-heading"><div><h2>最近请求</h2><p>最新的 API 调用记录</p></div><span class="link-label">最近 5 条</span></div>
         <div class="table-wrap">
-          <table><thead><tr><th>时间</th><th>模型</th><th>Provider</th><th>输入</th><th>输出</th><th>耗时</th><th>状态</th></tr></thead>
+          <table><thead><tr><th>时间</th><th>模型</th><th>Provider</th><th>输入</th><th>输出</th><th>Cache</th><th>耗时</th><th>状态</th></tr></thead>
             <tbody>
-              <tr v-for="item in recentRequests" :key="item.id"><td>{{ timeOnly(item.created_at) }}</td><td class="strong-cell">{{ item.model || "unknown" }}</td><td>{{ item.provider }}</td><td>{{ fmt(item.input_tokens) }}</td><td>{{ fmt(item.output_tokens) }}</td><td>{{ (item.latency_ms / 1000).toFixed(1) }}s</td><td><span class="status" :class="item.success ? 'success' : 'error'"><i></i>{{ item.success ? "成功" : item.status_code }}</span></td></tr>
-              <tr v-if="!recentRequests.length"><td colspan="7" class="empty-cell">暂无请求记录</td></tr>
+              <tr v-for="item in recentRequests" :key="item.id"><td>{{ timeOnly(item.created_at) }}</td><td class="strong-cell">{{ item.model || "unknown" }}</td><td>{{ item.provider }}</td><td>{{ fmt(item.input_tokens) }}</td><td>{{ fmt(item.output_tokens) }}</td><td>{{ fmt((item.cache_read_tokens || 0) + (item.cache_write_tokens || 0)) }}</td><td>{{ (item.latency_ms / 1000).toFixed(1) }}s</td><td><span class="status" :class="item.success ? 'success' : 'error'"><i></i>{{ item.success ? "成功" : item.status_code }}</span></td></tr>
+              <tr v-if="!recentRequests.length"><td colspan="8" class="empty-cell">暂无请求记录</td></tr>
             </tbody>
           </table>
         </div>
@@ -206,7 +209,7 @@ defineExpose({ refresh, scrollToSection });
 
       <article :ref="sectionRefs.alerts" class="panel alerts-panel scroll-target">
         <div class="panel-heading"><div><h2>洞察 & 提醒</h2><p>根据实时数据自动生成</p></div></div>
-        <div class="alert-list"><div v-for="alert in alerts" :key="alert.title" class="alert-item"><span class="alert-icon" :class="alert.tone"><AppIcon :name="alert.icon" :size="22" /></span><span class="alert-copy"><b>{{ alert.title }}</b><small>{{ alert.text }}</small></span><span class="alert-time">{{ alert.time }}</span><AppIcon name="chevron" :size="16" /></div></div>
+        <div class="alert-list"><button v-for="alert in alerts" :key="alert.title" type="button" class="alert-item" @click="emit('open-errors')"><span class="alert-icon" :class="alert.tone"><AppIcon :name="alert.icon" :size="22" /></span><span class="alert-copy"><b>{{ alert.title }}</b><small>{{ alert.text }}</small></span><span class="alert-time">{{ alert.time }}</span><AppIcon name="chevron" :size="16" /></button></div>
       </article>
     </section>
   </div>
@@ -214,7 +217,7 @@ defineExpose({ refresh, scrollToSection });
 
 <style scoped>
 .dashboard { max-width: 1540px; margin: 0 auto; transition: opacity .2s; }.dashboard.loading { opacity: .78; }
-.metric-grid { display: grid; grid-template-columns: repeat(6, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.metric-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
 .metric-card, .panel { border: 1px solid #e6ebf2; background: #fff; box-shadow: 0 2px 8px rgba(16,24,40,.035); }
 .metric-card { min-height: 112px; display: flex; align-items: center; gap: 16px; padding: 17px; border-radius: 10px; }
 .metric-icon { width: 52px; height: 52px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 14px; }.metric-icon.blue { color: #1769ef; background: #edf4ff; }.metric-icon.purple { color: #7d2ae8; background: #f4edff; }.metric-icon.green { color: #0aac74; background: #e9f9f2; }.metric-icon.emerald { color: #0aa873; background: #e9f9f2; }.metric-icon.orange { color: #f26b13; background: #fff2e8; }.metric-icon.red { color: #ef3434; background: #fff0f0; }
@@ -227,9 +230,9 @@ defineExpose({ refresh, scrollToSection });
 .distribution-content { min-height: 262px; display: flex; align-items: center; gap: 8px; }.donut-chart { width: 57%; height: 230px; }.legend-list { flex: 1; min-width: 110px; }.legend-item { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; }.legend-item i { width: 7px; height: 7px; margin-top: 4px; border-radius: 50%; }.legend-item span { display: grid; gap: 3px; }.legend-item b { color: #344054; font-size: 11px; }.legend-item small { color: #667085; font-size: 10px; }.empty-legend { color: #98a2b3; font-size: 11px; }
 .provider-head, .provider-row { display: grid; grid-template-columns: 1fr 1.8fr .7fr .8fr; align-items: center; gap: 10px; font-size: 11px; }.provider-head { height: 32px; color: #7b879b; border-bottom: 1px solid #edf1f6; }.provider-row { min-height: 44px; border-bottom: 1px solid #edf1f6; }.provider-row strong { overflow: hidden; color: #26344d; text-overflow: ellipsis; }.provider-progress { display: flex; align-items: center; gap: 8px; }.provider-progress > div { flex: 1; height: 7px; overflow: hidden; border-radius: 9px; background: #f0f3f7; }.provider-progress > div span { display: block; height: 100%; border-radius: 9px; }.provider-progress em { width: 36px; color: #667085; font-style: normal; }.empty-block { height: 155px; display: grid; place-items: center; color: #98a2b3; font-size: 12px; }
 .status { display: inline-flex; align-items: center; gap: 5px; }.status i { width: 6px; height: 6px; border-radius: 50%; }.status.success { color: #138a62; }.status.success i { background: #20b77a; }.status.error { color: #df3030; }.status.error i { background: #ef4444; }
-.alert-list { display: grid; gap: 9px; margin-top: 5px; }.alert-item { min-height: 62px; display: flex; align-items: center; gap: 11px; padding: 9px; border: 1px solid #e7ebf1; border-radius: 8px; }.alert-icon { width: 38px; height: 38px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 10px; }.alert-icon.red { color: #ef3434; background: #fff0f0; }.alert-icon.orange { color: #f26b13; background: #fff2e8; }.alert-icon.green { color: #0aac74; background: #e9f9f2; }.alert-icon.blue { color: #1769ef; background: #edf4ff; }.alert-copy { min-width: 0; flex: 1; display: grid; gap: 4px; }.alert-copy b { overflow: hidden; color: #26344d; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }.alert-copy small { overflow: hidden; color: #7b879b; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }.alert-time { align-self: flex-start; padding-top: 3px; color: #98a2b3; font-size: 9px; white-space: nowrap; }.alert-item > .app-icon { color: #98a2b3; }
-@media (max-width: 1380px) { .metric-grid { grid-template-columns: repeat(3, 1fr); }.top-grid { grid-template-columns: 1.35fr 1fr; }.distribution-panel { grid-column: 1 / -1; }.distribution-content { min-height: 210px; }.donut-chart { height: 200px; }.legend-list { display: grid; grid-template-columns: repeat(3, 1fr); }.bottom-grid { grid-template-columns: 1fr 1.4fr; }.alerts-panel { grid-column: 1 / -1; }.alert-list { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 960px) { .top-grid, .bottom-grid { grid-template-columns: 1fr; }.distribution-panel, .alerts-panel { grid-column: auto; }.alert-list { grid-template-columns: 1fr; } }
+.alert-list { display: grid; gap: 9px; margin-top: 5px; }.alert-item { width: 100%; min-height: 62px; display: flex; align-items: center; gap: 11px; padding: 9px; border: 1px solid #e7ebf1; border-radius: 8px; text-align: left; background: #fff; }.alert-item:hover { border-color: #b9cef2; background: #f9fbff; }.alert-icon { width: 38px; height: 38px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 10px; }.alert-icon.red { color: #ef3434; background: #fff0f0; }.alert-icon.orange { color: #f26b13; background: #fff2e8; }.alert-icon.green { color: #0aac74; background: #e9f9f2; }.alert-icon.blue { color: #1769ef; background: #edf4ff; }.alert-copy { min-width: 0; flex: 1; display: grid; gap: 4px; }.alert-copy b { overflow: hidden; color: #26344d; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }.alert-copy small { overflow: hidden; color: #7b879b; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }.alert-time { align-self: flex-start; padding-top: 3px; color: #98a2b3; font-size: 9px; white-space: nowrap; }.alert-item > .app-icon { color: #98a2b3; }
+@media (max-width: 1380px) { .top-grid { grid-template-columns: 1.35fr 1fr; }.distribution-panel { grid-column: 1 / -1; }.distribution-content { min-height: 210px; }.donut-chart { height: 200px; }.legend-list { display: grid; grid-template-columns: repeat(3, 1fr); }.bottom-grid { grid-template-columns: 1fr 1.4fr; }.alerts-panel { grid-column: 1 / -1; }.alert-list { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 960px) { .metric-grid { grid-template-columns: repeat(2, 1fr); }.top-grid, .bottom-grid { grid-template-columns: 1fr; }.distribution-panel, .alerts-panel { grid-column: auto; }.alert-list { grid-template-columns: 1fr; } }
 @media (max-width: 680px) { .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.metric-card { min-height: 96px; padding: 13px; gap: 10px; }.metric-icon { width: 42px; height: 42px; }.metric-value { font-size: 21px; }.panel { padding: 15px; }.trend-chart { height: 230px; }.distribution-content { flex-direction: column; }.donut-chart { width: 100%; height: 190px; }.legend-list { width: 100%; grid-template-columns: repeat(2, 1fr); }.provider-head, .provider-row { grid-template-columns: 1fr 1.5fr .65fr; }.provider-head span:last-child, .provider-row > span:last-child { display: none; } }
 @media (max-width: 430px) { .metric-card { align-items: flex-start; }.metric-icon { display: none; }.metric-note { white-space: normal; }.metric-grid { gap: 8px; } }
 </style>

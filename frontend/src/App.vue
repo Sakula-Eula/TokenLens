@@ -1,10 +1,14 @@
 <script setup>
-import { nextTick, ref } from "vue";
+import { defineAsyncComponent, nextTick, ref } from "vue";
 import AppIcon from "./components/AppIcon.vue";
 import DashboardView from "./views/DashboardView.vue";
 import RequestsView from "./views/RequestsView.vue";
 
+const ErrorsView = defineAsyncComponent(() => import("./views/ErrorsView.vue"));
+const SettingsView = defineAsyncComponent(() => import("./views/SettingsView.vue"));
+
 const tab = ref("dashboard");
+const activeNavigation = ref("dashboard");
 const dashboardRef = ref(null);
 const requestsRef = ref(null);
 const refreshing = ref(false);
@@ -18,18 +22,23 @@ const navigation = [
   { id: "tokens", label: "Token", icon: "wallet", section: "distribution" },
   { id: "requests", label: "请求", icon: "request" },
   { id: "errors", label: "错误", icon: "alert", section: "alerts" },
-  { id: "settings", label: "设置", icon: "settings", disabled: true },
+  { id: "settings", label: "设置", icon: "settings" },
 ];
 
 async function selectNavigation(item) {
-  if (item.disabled) return;
-  if (item.id === "requests") {
-    tab.value = "requests";
+  activeNavigation.value = item.id;
+  if (["requests", "errors", "settings"].includes(item.id)) {
+    tab.value = item.id;
     return;
   }
   tab.value = "dashboard";
   await nextTick();
   if (item.section) dashboardRef.value?.scrollToSection(item.section);
+}
+
+function openErrors() {
+  activeNavigation.value = "errors";
+  tab.value = "errors";
 }
 
 async function manualRefresh() {
@@ -49,7 +58,7 @@ async function manualRefresh() {
       </div>
       <nav class="side-nav" aria-label="主导航">
         <button v-for="item in navigation" :key="item.id" type="button"
-          :class="{ active: tab === item.id, disabled: item.disabled }"
+          :class="{ active: activeNavigation === item.id, disabled: item.disabled }"
           :aria-disabled="item.disabled" @click="selectNavigation(item)">
           <AppIcon :name="item.icon" :size="19" /><span>{{ item.label }}</span>
         </button>
@@ -62,7 +71,7 @@ async function manualRefresh() {
           <span class="brand-mark"><AppIcon name="logo" :size="22" /></span><strong>TokenLens</strong>
         </div>
         <div class="toolbar">
-          <label v-if="tab === 'dashboard'" class="range-select">
+          <label v-if="tab === 'dashboard' || tab === 'errors'" class="range-select">
             <select v-model="range" aria-label="统计时间范围">
               <option value="24h">最近24小时</option><option value="7d">最近7天</option><option value="30d">最近30天</option>
             </select>
@@ -77,8 +86,10 @@ async function manualRefresh() {
         </div>
       </header>
       <main>
-        <DashboardView v-if="tab === 'dashboard'" ref="dashboardRef" :range="range" :auto-refresh="autoRefresh" />
-        <RequestsView v-else ref="requestsRef" :auto-refresh="autoRefresh" />
+        <DashboardView v-if="tab === 'dashboard'" ref="dashboardRef" :range="range" :auto-refresh="autoRefresh" @open-errors="openErrors" />
+        <RequestsView v-else-if="tab === 'requests'" ref="requestsRef" :auto-refresh="autoRefresh" />
+        <ErrorsView v-else-if="tab === 'errors'" ref="requestsRef" :range="range" :auto-refresh="autoRefresh" />
+        <SettingsView v-else ref="requestsRef" />
       </main>
     </section>
   </div>
@@ -123,8 +134,8 @@ button { cursor: pointer; }
 @media (max-width: 900px) {
   .sidebar { inset: auto 0 0; width: auto; height: 62px; border-right: 0; border-top: 1px solid #e4e9f1; }
   .brand { display: none; }.side-nav { height: 100%; padding: 4px 8px; display: flex; justify-content: space-around; }
-  .side-nav button { width: auto; height: 52px; flex: 1; max-width: 110px; flex-direction: column; justify-content: center; gap: 3px; padding: 0 5px; font-size: 11px; }
-  .side-nav button:nth-child(4), .side-nav button:nth-child(6), .side-nav button:nth-child(7) { display: none; }
+  .side-nav { justify-content: flex-start; overflow-x: auto; }
+  .side-nav button { width: 72px; height: 52px; flex: 0 0 72px; flex-direction: column; justify-content: center; gap: 3px; padding: 0 5px; font-size: 11px; }
   .workspace { margin-left: 0; padding-bottom: 62px; }.topbar { padding: 0 18px; justify-content: space-between; }.mobile-brand { display: flex; }
   .toolbar { gap: 10px; }.auto-refresh > span:first-child { display: none; }.workspace main { padding: 16px; }
 }
