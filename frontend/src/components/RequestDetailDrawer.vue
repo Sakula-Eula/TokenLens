@@ -1,5 +1,6 @@
 <script setup>
 import { onBeforeUnmount, ref, watch } from "vue";
+import ModelIcon from "./ModelIcon.vue";
 import { fetchRequestDetail } from "../api";
 
 const props = defineProps({ recordId: { type: Number, default: null } });
@@ -33,7 +34,7 @@ function money(value) { return `¥${(Number(value || 0) / 1_000_000).toFixed(6)}
       <div v-if="loading" class="state">正在加载…</div><div v-else-if="error" class="state error">{{ error }}</div>
       <dl v-else-if="item">
         <div><dt>Request ID</dt><dd class="mono">{{ item.request_id || '—' }}</dd></div><div><dt>数据库 ID</dt><dd>{{ item.id }}</dd></div>
-        <div><dt>Provider</dt><dd>{{ item.provider }}</dd></div><div><dt>模型</dt><dd>{{ item.model || 'unknown' }}</dd></div>
+        <div><dt>Provider</dt><dd>{{ item.provider }}</dd></div><div><dt>模型</dt><dd class="model-name"><ModelIcon :model="item.model" :provider="item.provider" :size="25" />{{ item.model || 'unknown' }}</dd></div>
         <div class="wide"><dt>Endpoint</dt><dd class="mono">{{ item.endpoint || '—' }}</dd></div>
         <div><dt>调用模式</dt><dd>{{ item.stream ? '流式' : '非流式' }}</dd></div><div><dt>创建时间</dt><dd>{{ String(item.created_at).replace('T', ' ') }}</dd></div>
         <div><dt>Input Token</dt><dd>{{ fmt(item.input_tokens) }}</dd></div><div><dt>Output Token</dt><dd>{{ fmt(item.output_tokens) }}</dd></div>
@@ -48,5 +49,5 @@ function money(value) { return `¥${(Number(value || 0) / 1_000_000).toFixed(6)}
 </template>
 
 <style scoped>
-.drawer-shell { position: fixed; inset: 0; z-index: 100; display: flex; justify-content: flex-end; background: rgba(15,23,42,.28); backdrop-filter: blur(2px); }.drawer { width: min(560px, 94vw); height: 100%; overflow-y: auto; padding: 22px; background: #fff; box-shadow: -12px 0 36px #10182824; }.drawer header { display: flex; justify-content: space-between; gap: 20px; padding-bottom: 18px; border-bottom: 1px solid #e8edf4; }.drawer h2 { margin: 0; color: #101828; font-size: 19px; }.drawer p { margin: 5px 0 0; color: #98a2b3; font-size: 11px; }.drawer header button { width: 34px; height: 34px; border: 0; border-radius: 7px; color: #667085; background: #f4f6f8; font-size: 22px; }.state { min-height: 300px; display: grid; place-items: center; color: #667085; }.state.error { color: #b42318; }dl { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin: 18px 0; border: 1px solid #e8edf4; border-radius: 9px; }dl div { min-width: 0; padding: 13px; border-bottom: 1px solid #edf1f6; }.wide { grid-column: 1 / -1; }dt { margin-bottom: 5px; color: #98a2b3; font-size: 10px; }dd { margin: 0; overflow-wrap: anywhere; color: #344054; font-size: 12px; }.mono { font-family: ui-monospace, Consolas, monospace; }.success { color: #087a55; }.failure { color: #b42318; }@media(max-width:520px){dl{grid-template-columns:1fr}.wide{grid-column:auto}}
+.drawer-shell { position: fixed; inset: 0; z-index: 100; display: flex; justify-content: flex-end; background: rgba(15,23,42,.28); backdrop-filter: blur(2px); }.drawer { width: min(560px, 94vw); height: 100%; overflow-y: auto; padding: 22px; background: #fff; box-shadow: -12px 0 36px #10182824; }.drawer header { display: flex; justify-content: space-between; gap: 20px; padding-bottom: 18px; border-bottom: 1px solid #e8edf4; }.drawer h2 { margin: 0; color: #101828; font-size: 19px; }.drawer p { margin: 5px 0 0; color: #98a2b3; font-size: 11px; }.drawer header button { width: 34px; height: 34px; border: 0; border-radius: 7px; color: #667085; background: #f4f6f8; font-size: 22px; }.state { min-height: 300px; display: grid; place-items: center; color: #667085; }.state.error { color: #b42318; }dl { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin: 18px 0; border: 1px solid #e8edf4; border-radius: 9px; }dl div { min-width: 0; padding: 13px; border-bottom: 1px solid #edf1f6; }.wide { grid-column: 1 / -1; }dt { margin-bottom: 5px; color: #98a2b3; font-size: 10px; }dd { margin: 0; overflow-wrap: anywhere; color: #344054; font-size: 12px; }.model-name { display: flex; align-items: center; gap: 8px; }.mono { font-family: ui-monospace, Consolas, monospace; }.success { color: #087a55; }.failure { color: #b42318; }@media(max-width:520px){dl{grid-template-columns:1fr}.wide{grid-column:auto}}
 </style>

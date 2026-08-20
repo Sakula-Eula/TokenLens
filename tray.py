@@ -2,8 +2,8 @@
 
 启动后：
 - 后台线程运行 uvicorn，服务监听 http://127.0.0.1:7788
-- 右下角显示托盘图标
-- 双击图标（或菜单）打开 Dashboard
+- 右下角显示托盘图标，单击显示紧凑浮窗
+- 通过右键菜单打开独立 Dashboard 桌面窗口
 - 右键菜单可打开 config.yaml、退出程序
 
 用法:
@@ -11,17 +11,20 @@
 """
 import sys
 import threading
-import webbrowser
+import time
+from multiprocessing import freeze_support
 from pathlib import Path
 
 import pystray
 import uvicorn
 from PIL import Image
 
+from desktop_app import DesktopController
+from windows_tray import HoverTrayIcon
+
 ROOT = Path(__file__).resolve().parent
 HOST = "127.0.0.1"
 PORT = 7788
-DASHBOARD_URL = f"http://{HOST}:{PORT}/dashboard"
 ICON_PATH = ROOT / "assets" / "icon.png"
 
 
@@ -41,10 +44,6 @@ def _load_icon(path: Path) -> Image.Image:
     return img
 
 
-def _open_dashboard() -> None:
-    webbrowser.open(DASHBOARD_URL)
-
-
 def _open_config() -> None:
     config_path = ROOT / "config.yaml"
     if not config_path.exists():
@@ -54,12 +53,13 @@ def _open_config() -> None:
 
         os.startfile(config_path)  # type: ignore[attr-defined]
     else:
-        webbrowser.open(config_path.as_uri())
+        raise RuntimeError("TokenLens desktop mode currently supports Windows only")
 
 
 def main() -> None:
     from backend.main import app
 
+    desktop = DesktopController(f"http://{HOST}:{PORT}")
     config = uvicorn.Config(app=app, host=HOST, port=PORT, log_level="info")
     server = uvicorn.Server(config)
 
@@ -67,33 +67,53 @@ def main() -> None:
     server_thread = threading.Thread(target=server.run, name="uvicorn", daemon=True)
     server_thread.start()
 
+    for _ in range(100):
+        if server.started:
+            break
+        if not server_thread.is_alive():
+            raise RuntimeError(f"TokenLens 无法启动：端口 {PORT} 可能已被占用")
+        time.sleep(0.05)
+    else:
+        raise RuntimeError("TokenLens 后台服务启动超时")
+
+    def on_widget(icon, item) -> None:
+        desktop.on_tray_click()
+
     def on_open(icon, item) -> None:
-        _open_dashboard()
+        desktop.open_dashboard()
 
     def on_config(icon, item) -> None:
         _open_config()
 
     def on_exit(icon, item) -> None:
         server.should_exit = True
+        desktop.stop()
         icon.stop()
 
-    icon = pystray.Icon(
+    icon = HoverTrayIcon(
         "TokenLens",
         _load_icon(ICON_PATH),
         "TokenLens",
+        on_hover=desktop.on_tray_hover,
         menu=pystray.Menu(
-            pystray.MenuItem("打开 Dashboard", on_open, default=True),
+            pystray.MenuItem("显示悬浮窗", on_widget, default=True),
+            pystray.MenuItem("打开 Dashboard", on_open),
             pystray.MenuItem("打开 config.yaml", on_config),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("退出", on_exit),
         ),
     )
-    icon.run()
+    icon.run_detached()
 
-    # 退出托盘后，确保服务优雅停止（等待 httpx/SQLite 收尾）
-    server.should_exit = True
-    server_thread.join(timeout=5)
+    try:
+        desktop.run()
+    finally:
+        # 无论窗口循环正常结束还是抛错，都回收托盘与后台服务。
+        icon.stop()
+        server.should_exit = True
+        server_thread.join(timeout=5)
 
 
 if __name__ == "__main__":
+    freeze_support()
     main()

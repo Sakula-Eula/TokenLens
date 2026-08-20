@@ -8,6 +8,7 @@ TokenLens 是一个运行在 Windows 本地的模型 API 透明代理与用量�
 
 - Python 3.11+
 - Node.js 20+（仅用于构建 Dashboard）
+- Microsoft Edge WebView2 Runtime（Windows 11 通常已预装）
 
 ## 启动
 
@@ -28,9 +29,12 @@ Pop-Location
 .\.venv\Scripts\python.exe tray.py
 ```
 
-启动后 TokenLens 常驻 Windows 右下角系统托盘：
+启动后 TokenLens 常驻 Windows 右下角系统托盘，并使用 WebView2 提供原生桌面窗口：
 
-- 双击图标（或右键菜单「打开 Dashboard」）用默认浏览器打开 Dashboard
+- 单击托盘图标显示紧凑用量悬浮窗，单纯悬停不会弹出，移出后自动隐藏
+- 右键菜单「打开 Dashboard」打开独立 Dashboard 桌面窗口，不启动浏览器
+- 悬浮窗的固定按钮可关闭自动隐藏；设置、查看详情和全部模型会跳到桌面 Dashboard 的对应页面
+- 关闭 Dashboard 窗口不会停止代理服务
 - 右键菜单「打开 config.yaml」打开配置文件
 - 右键菜单「退出」停止服务并退出
 
