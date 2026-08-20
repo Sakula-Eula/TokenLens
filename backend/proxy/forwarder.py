@@ -15,6 +15,7 @@ from backend.proxy.preprocess import (
 from backend.usage.anthropic_parser import parse_usage as parse_anthropic
 from backend.usage.model import Usage
 from backend.usage.openai_parser import parse_usage as parse_openai
+from backend.usage.responses_parser import parse_usage as parse_responses
 
 
 def build_record(*, request_id, provider, model, endpoint, stream, usage: Usage | None,
@@ -42,6 +43,8 @@ def build_record(*, request_id, provider, model, endpoint, stream, usage: Usage 
 def _parse_usage(protocol: str, payload: dict) -> Usage | None:
     if protocol == "openai":
         return parse_openai(payload)
+    if protocol == "responses":
+        return parse_responses(payload)
     return parse_anthropic(payload)
 
 

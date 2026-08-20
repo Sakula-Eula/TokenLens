@@ -71,6 +71,7 @@ Pop-Location
 ## 支持范围
 
 - 统计 OpenAI Compatible 的 `/v1/chat/completions`，包括 SSE 流式请求；流式请求会自动注入 `stream_options.include_usage`。
+- 统计 OpenAI Responses API 的 `/v1/responses`，包括 SSE 流式请求（usage 取自流末尾的 `response.completed` 事件）。
 - 统计 Anthropic 的 `/v1/messages`，包括 SSE 流式请求。
 - 其余 `/v1/*` 路径会透明转发，但不会产生 Token 用量记录。
 - Dashboard 每 5 秒轮询本地统计 API。

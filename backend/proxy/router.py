@@ -14,6 +14,8 @@ MAX_BODY = 32 * 1024 * 1024  # 32MB，与 Anthropic/Claude Code 客户端限制�
 def _classify(rest: str) -> str | None:
     if rest.startswith("chat/completions"):
         return "openai"
+    if rest == "responses":
+        return "responses"
     if rest == "messages":
         return "anthropic"
     return None

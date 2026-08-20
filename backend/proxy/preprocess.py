@@ -35,7 +35,7 @@ def inject_stream_options(body: dict, protocol: str, path: str) -> bool:
 def apply_auth_fallback(headers: dict, cfg: ProviderConfig, protocol: str) -> dict:
     if cfg.api_key is None:
         return headers
-    if protocol == "openai" and "authorization" not in headers:
+    if protocol in ("openai", "responses") and "authorization" not in headers:
         headers["authorization"] = f"Bearer {cfg.api_key}"
     elif protocol == "anthropic" and "x-api-key" not in headers:
         headers["x-api-key"] = cfg.api_key

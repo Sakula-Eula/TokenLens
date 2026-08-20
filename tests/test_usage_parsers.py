@@ -1,6 +1,7 @@
 from backend.usage.model import Usage
 from backend.usage.openai_parser import parse_usage as parse_openai
 from backend.usage.anthropic_parser import parse_usage as parse_anthropic
+from backend.usage.responses_parser import parse_usage as parse_responses
 
 
 def test_openai_full_mapping():
@@ -40,3 +41,25 @@ def test_anthropic_full_mapping():
 
 def test_anthropic_missing_usage_returns_none():
     assert parse_anthropic({"type": "message"}) is None
+
+
+def test_responses_full_mapping():
+    payload = {
+        "usage": {
+            "input_tokens": 12500,
+            "input_tokens_details": {"cached_tokens": 8000},
+            "output_tokens": 3210,
+            "total_tokens": 15710,
+        }
+    }
+    u = parse_responses(payload)
+    assert u == Usage(12500, 3210, 8000, 0, 15710)
+
+
+def test_responses_total_fallback():
+    u = parse_responses({"usage": {"input_tokens": 100, "output_tokens": 50}})
+    assert u == Usage(100, 50, 0, 0, 150)
+
+
+def test_responses_missing_usage_returns_none():
+    assert parse_responses({"id": "resp_x"}) is None

@@ -47,3 +47,31 @@ def test_non_dict_events_are_skipped_without_crash():
     u = p.feed('data: {"choices":[{"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}\n\ndata: [DONE]\n\n')
     assert u == Usage(10, 5, 0, 0, 15)
     assert p.finish() == Usage(10, 5, 0, 0, 15)
+
+
+def test_responses_stream_completed_event():
+    p = StreamUsageParser("responses")
+    assert p.feed('event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"Hi"}\n\n') is None
+    u = p.feed('event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp_1","usage":{"input_tokens":10,"input_tokens_details":{"cached_tokens":4},"output_tokens":5,"total_tokens":15}}}\n\n')
+    assert u == Usage(10, 5, 4, 0, 15)
+    assert p.finish() == Usage(10, 5, 4, 0, 15)
+
+
+def test_responses_stream_completed_split_across_feeds():
+    p = StreamUsageParser("responses")
+    assert p.feed('data: {"type":"response.completed","response":{"id":"resp_1","us') is None
+    u = p.feed('age":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}}\n\n')
+    assert u == Usage(10, 5, 0, 0, 15)
+    assert p.finish() == Usage(10, 5, 0, 0, 15)
+
+
+def test_responses_stream_ignores_non_completed_and_bad_json():
+    p = StreamUsageParser("responses")
+    assert p.feed('data: {"type":"response.created","response":{}}\n\ndata: not-json\n\n') is None
+    assert p.finish() is None
+
+
+def test_responses_stream_error():
+    p = StreamUsageParser("responses")
+    p.feed('data: {"type":"error","error":{"type":"server_error","message":"boom"}}\n\n')
+    assert p.stream_error == "server_error"

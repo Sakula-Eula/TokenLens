@@ -3,6 +3,7 @@ import json
 from backend.usage.anthropic_parser import parse_usage as parse_anthropic
 from backend.usage.model import Usage
 from backend.usage.openai_parser import parse_usage as parse_openai
+from backend.usage.responses_parser import parse_usage as parse_responses
 
 
 class StreamUsageParser:
@@ -13,6 +14,7 @@ class StreamUsageParser:
         self._openai_usage: Usage | None = None
         self._anthropic_input: Usage | None = None
         self._anthropic_output: Usage | None = None
+        self._responses_usage: Usage | None = None
 
     def feed(self, text: str) -> Usage | None:
         self._buffer += text
@@ -46,6 +48,14 @@ class StreamUsageParser:
                 self._openai_usage = usage
                 return usage
             return None
+        if self.protocol == "responses":
+            if event.get("type") == "response.completed":
+                response = event.get("response") or {}
+                usage = parse_responses(response)
+                if usage is not None:
+                    self._responses_usage = usage
+                    return usage
+            return None
         if event.get("type") == "message_start":
             message = event.get("message") or {}
             usage = parse_anthropic({"usage": message.get("usage")})
@@ -72,4 +82,6 @@ class StreamUsageParser:
     def finish(self) -> Usage | None:
         if self.protocol == "openai":
             return self._openai_usage
+        if self.protocol == "responses":
+            return self._responses_usage
         return self._merged_anthropic()
