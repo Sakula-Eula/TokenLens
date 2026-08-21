@@ -66,17 +66,16 @@ def test_summary_and_group_stats(tmp_path):
     assert providers[0]["provider"] == "provider_a"
 
 
-def test_rolling_range_summary_groups_and_error_distributions(tmp_path):
+def test_today_range_summary_groups_and_error_distributions(tmp_path):
     database.init_db(tmp_path / "test.db")
     now = datetime.now()
     database.insert_request(_record(request_id="recent_ok", cache_read_tokens=3))
     database.insert_request(_record(
         request_id="recent_error", success=0, status_code=429, error_type="rate_limit",
-        created_at=(now - timedelta(hours=2)).isoformat(timespec="seconds"),
     ))
     database.insert_request(_record(
-        request_id="old_error", success=0, status_code=500, error_type="server_error",
-        created_at=(now - timedelta(hours=25)).isoformat(timespec="seconds"),
+        request_id="yesterday_error", success=0, status_code=500, error_type="server_error",
+        created_at=(now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(seconds=1)).isoformat(timespec="seconds"),
     ))
 
     summary_24h = queries.range_summary("24h")
@@ -92,9 +91,9 @@ def test_trend_buckets(tmp_path):
     database.init_db(tmp_path / "test.db")
     now = datetime.now()
     database.insert_request(_record(request_id="r1", created_at=now.isoformat(timespec="seconds")))
-    database.insert_request(_record(request_id="r2", created_at=(now - timedelta(hours=1)).isoformat(timespec="seconds")))
+    database.insert_request(_record(request_id="r2", created_at=(now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(seconds=1)).isoformat(timespec="seconds")))
     hours = queries.trend_stats("24h")
-    assert len(hours) >= 2
+    assert len(hours) == 1
     assert all("bucket" in h and "total_tokens" in h for h in hours)
     days = queries.trend_stats("7d")
     assert len(days) >= 1

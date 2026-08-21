@@ -25,21 +25,27 @@ let timer = null;
 const ranges = [
   { value: "1h", label: "1H" },
   { value: "6h", label: "6H" },
-  { value: "24h", label: "24H" },
+  { value: "24h", label: "今日" },
   { value: "7d", label: "7D" },
 ];
 
 const totalTokens = computed(() => Number(summary.value.total_tokens) || 0);
 const estimatedCost = computed(() => Number(costSummary.value.total_cost_micros || 0) / 1_000_000);
 const topModels = computed(() => models.value.slice(0, 3).map((item) => {
+  const inputTokens = Math.max(0, Number(item.input_tokens) || 0);
+  // Cache-read tokens are already included in input_tokens.  Split input into
+  // mutually exclusive cache-hit and cache-miss portions before rendering.
+  const cacheHitTokens = Math.min(inputTokens, Math.max(0, Number(item.cache_read_tokens) || 0));
   const parts = [
-    { key: "cache", value: Number(item.cache_tokens || 0), color: "#8061ee" },
-    { key: "input", value: Number(item.input_tokens || 0), color: "#1673ed" },
+    { key: "cache-hit", value: cacheHitTokens, color: "#8061ee" },
+    { key: "input-miss", value: inputTokens - cacheHitTokens, color: "#1673ed" },
     { key: "output", value: Number(item.output_tokens || 0), color: "#0aa36e" },
   ];
   const partTotal = Math.max(1, parts.reduce((sum, part) => sum + part.value, 0));
   return {
     ...item,
+    cache_hit_tokens: cacheHitTokens,
+    input_miss_tokens: inputTokens - cacheHitTokens,
     parts: parts.map((part) => ({ ...part, percent: Math.round(part.value / partTotal * 100) })),
   };
 }));
@@ -190,14 +196,14 @@ onBeforeUnmount(() => clearInterval(timer));
 
     <section class="ranking card">
       <header class="ranking-heading"><h2>模型使用量（Top 3）</h2><button type="button" @click="openDashboard('/models')">全部模型 <TrayIcon name="chevron" :size="14" /></button></header>
-      <div class="legend"><span class="cache">缓存输入</span><span class="input">输入</span><span class="output">输出</span><small>总 Token</small></div>
+      <div class="legend"><span class="cache">缓存命中</span><span class="input">未命中输入</span><span class="output">输出</span><small>总 Token</small></div>
       <div class="model-list">
         <article v-for="model in topModels" :key="model.model" class="model-row">
           <ModelIcon class="model-logo" :model="model.model" :provider="model.provider" :size="31" />
           <div class="model-main">
             <div class="model-title"><strong>{{ model.model }}</strong><b>{{ fmt(model.total_tokens) }}</b></div>
             <div class="segmented-bar"><i v-for="part in model.parts" :key="part.key" :style="{ width: `${part.percent}%`, background: part.color }"><span v-if="part.percent >= 18">{{ part.percent }}%</span></i></div>
-            <div class="model-meta"><span class="cache">缓存 {{ fmt(model.cache_tokens) }}</span><span class="input">输入 {{ fmt(model.input_tokens) }}</span><span class="output">输出 {{ fmt(model.output_tokens) }}</span></div>
+            <div class="model-meta"><span class="cache">命中 {{ fmt(model.cache_hit_tokens) }}</span><span class="input">未命中 {{ fmt(model.input_miss_tokens) }}</span><span class="output">输出 {{ fmt(model.output_tokens) }}</span></div>
           </div>
         </article>
         <div v-if="!topModels.length" class="empty-models">暂无模型使用数据</div>

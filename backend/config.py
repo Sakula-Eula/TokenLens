@@ -12,6 +12,7 @@ class ProviderConfig:
     type: str
     base_url: str
     api_key: str | None = None
+    upstream_path_mode: str = "v1"
 
 
 _PROVIDER_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -29,7 +30,13 @@ def _normalize_provider(name: str, item: dict) -> ProviderConfig:
         raise ValueError(f"provider '{name}': base_url must not end with /v1")
     if not base_url.startswith(("http://", "https://")):
         raise ValueError(f"provider '{name}': base_url must start with http:// or https://")
-    return ProviderConfig(name=name, type=ptype, base_url=base_url, api_key=item.get("api_key") or None)
+    path_mode = item.get("upstream_path_mode") or "v1"
+    if path_mode not in ("v1", "codex"):
+        raise ValueError(f"provider '{name}': upstream_path_mode must be v1 or codex")
+    return ProviderConfig(
+        name=name, type=ptype, base_url=base_url,
+        api_key=item.get("api_key") or None, upstream_path_mode=path_mode,
+    )
 
 
 def load_config(path: Path) -> dict[str, ProviderConfig]:
@@ -48,6 +55,7 @@ def public_providers(path: Path) -> list[dict]:
             "name": provider.name,
             "type": provider.type,
             "base_url": provider.base_url,
+            "upstream_path_mode": provider.upstream_path_mode,
             "has_api_key": bool(provider.api_key),
         }
         for provider in load_config(path).values()
@@ -69,6 +77,8 @@ def save_providers(path: Path, items: list[dict]) -> None:
             api_key = None
         provider = _normalize_provider(name, {**item, "api_key": api_key})
         data = {"type": provider.type, "base_url": provider.base_url}
+        if provider.upstream_path_mode != "v1":
+            data["upstream_path_mode"] = provider.upstream_path_mode
         if provider.api_key:
             data["api_key"] = provider.api_key
         normalized[provider.name] = data

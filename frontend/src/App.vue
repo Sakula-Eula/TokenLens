@@ -59,7 +59,7 @@ async function manualRefresh() {
       <header class="topbar">
         <div class="mobile-brand"><span class="brand-mark"><img :src="logoUrl" alt="TokenLens" /></span><strong>TokenLens</strong></div>
         <div class="toolbar">
-          <label v-if="route.meta.range" class="range-select"><select v-model="range" aria-label="统计时间范围"><option value="24h">最近24小时</option><option value="7d">最近7天</option><option value="30d">最近30天</option></select><AppIcon name="calendar" :size="16" /></label>
+          <label v-if="route.meta.range" class="range-select"><select v-model="range" aria-label="统计时间范围"><option value="24h">今日（零点至今）</option><option value="7d">最近7天</option><option value="30d">最近30天</option></select><AppIcon name="calendar" :size="16" /></label>
           <label class="auto-refresh"><span>自动刷新</span><input v-model="autoRefresh" type="checkbox" /><span class="switch" aria-hidden="true"></span></label>
           <button class="refresh-button" type="button" :disabled="refreshing" @click="manualRefresh"><AppIcon name="refresh" :size="17" :class="{ spinning: refreshing }" /><span>{{ refreshing ? "刷新中" : "刷新" }}</span></button>
         </div>

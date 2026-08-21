@@ -15,10 +15,12 @@ GROUP_SORT_FIELDS = {
 
 
 def range_since(range_key: str) -> str:
-    """Return the rolling-window lower bound used by all statistics queries."""
+    """Return the lower bound used by all statistics queries."""
     assert range_key in RANGE_KEYS
-    delta = timedelta(hours=24) if range_key == "24h" else timedelta(days=int(range_key[:-1]))
-    return (datetime.now() - delta).isoformat(timespec="seconds")
+    now = datetime.now()
+    if range_key == "24h":
+        return now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
+    return (now - timedelta(days=int(range_key[:-1]))).isoformat(timespec="seconds")
 
 
 def _summary(where: str, params: tuple | list) -> dict:

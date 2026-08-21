@@ -53,11 +53,12 @@ async def test_summary(app, client):
 @pytest.mark.asyncio
 async def test_models_and_providers(app, client):
     database.init_db(app.state.db_path)
-    database.insert_request(_record())
+    database.insert_request(_record(cache_read_tokens=20, cache_write_tokens=10))
     database.insert_request(_record(request_id="req_2", model="claude-sonnet", provider="provider_b",
                                     total_tokens=50, input_tokens=30, output_tokens=20))
     models = (await client.get("/api/stats/models", params={"range": "7d"})).json()["items"]
     assert models[0]["model"] == "gpt-5.6-sol" and models[0]["total_tokens"] == 150
+    assert models[0]["cache_read_tokens"] == 20 and models[0]["cache_write_tokens"] == 10
     providers = (await client.get("/api/stats/providers", params={"range": "7d"})).json()["items"]
     assert len(providers) == 2
 
@@ -81,7 +82,7 @@ async def test_range_is_shared_and_errors_endpoint(app, client):
                                     error_type="rate_limit"))
     database.insert_request(_record(request_id="old_error", success=0, status_code=500,
                                     error_type="server_error",
-                                    created_at=(now - timedelta(hours=25)).isoformat(timespec="seconds")))
+                                    created_at=(now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(seconds=1)).isoformat(timespec="seconds")))
     summary = (await client.get("/api/stats/summary", params={"range": "24h"})).json()
     models = (await client.get("/api/stats/models", params={"range": "24h"})).json()["items"]
     errors = (await client.get("/api/stats/errors", params={"range": "24h"})).json()

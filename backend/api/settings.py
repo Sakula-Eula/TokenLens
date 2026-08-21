@@ -14,6 +14,7 @@ class ProviderInput(BaseModel):
     base_url: str = Field(min_length=1, max_length=2048)
     api_key: str | None = Field(default=None, max_length=4096)
     clear_api_key: bool = False
+    upstream_path_mode: Literal["v1", "codex"] = "v1"
 
 
 class ProviderSettings(BaseModel):

@@ -38,7 +38,7 @@ function localDate(date) {
 }
 function rangeStart() {
   const date = new Date();
-  props.range === "24h" ? date.setHours(date.getHours() - 24) : date.setDate(date.getDate() - (props.range === "7d" ? 7 : 30));
+  props.range === "24h" ? date.setHours(0, 0, 0, 0) : date.setDate(date.getDate() - (props.range === "7d" ? 7 : 30));
   const offset = date.getTimezoneOffset() * 60000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 19);
 }
@@ -86,7 +86,7 @@ defineExpose({ refresh });
   <div class="errors-page" :class="{ loading }">
     <div class="page-heading">
       <div><h1>错误监控</h1><p>定位失败请求、状态码和上游错误类型</p></div>
-      <span class="period-label">当前周期：{{ range === '24h' ? '最近24小时' : range === '7d' ? '最近7天' : '最近30天' }}</span>
+      <span class="period-label">当前周期：{{ range === '24h' ? '今日（零点至今）' : range === '7d' ? '最近7天' : '最近30天' }}</span>
     </div>
 
     <ApiStateBanner :error="loadError" :updated-at="updatedAt" />

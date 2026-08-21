@@ -998,3 +998,74 @@ Dashboard 标题栏已替换为 TokenLens 图标后，用户要求将标题文�
 ### 已知限制
 
 - 项目尚无 Vue 组件交互测试；默认收缩行为通过状态初始化审查和生产构建验证。
+
+## 2026-08-20：修正悬浮窗模型 Token 构成的缓存重复计数
+
+### 背景
+
+悬浮窗的模型用量进度条将 `cache_tokens`、`input_tokens` 和 `output_tokens` 作为并列分段。对于输入统计已包含缓存命中的 Provider，这会把缓存命中重复计入输入总量，导致视觉比例和构成总数错误。
+
+### 需求澄清
+
+- 模型 Token 构成应为互斥的“缓存命中、未命中输入、输出”三段。
+- 缓存命中只取 `cache_read_tokens`；`cache_write_tokens` 继续保留为独立统计字段，但不作为命中输入叠加到进度条。
+- 不修改数据库或既有 `total_tokens` 的统计口径。
+
+### 任务拆分
+
+| 阶段 | 任务 | 结果 |
+| --- | --- | --- |
+| 前端 | 将输入拆为缓存命中与未命中输入 | 已完成 |
+| 接口 | 回归检查模型统计返回缓存读写字段 | 已完成 |
+| 验证 | 执行接口测试、Vue 生产构建和差异检查 | 通过 |
+
+### 设计与实施
+
+`frontend/src/views/TrayOverviewView.vue` 在生成 Top 3 模型的进度条分段时，将缓存命中限制为 `min(input_tokens, cache_read_tokens)`，未命中输入计算为 `max(input_tokens - cache_read_tokens, 0)`。条形图、图例和辅助文案统一使用这三个互斥部分；缓存写入不参与条形图计算。
+
+`tests/test_stats_api.py` 增加模型聚合接口对 `cache_read_tokens` 和 `cache_write_tokens` 的断言，确保前端可以持续获得用于拆分的缓存读数据。
+
+### 验证记录
+
+- 接口测试：执行 `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_stats_api.py -q`，结果为 `7 passed in 0.91s`；pytest 输出一条既有的 `asyncio_default_fixture_loop_scope` 弃用警告。
+- Vue 构建：在 `frontend/` 执行 `npm run build`，Vite 成功转换 684 个模块并生成生产资源。
+- 构建仍提示现有 ECharts 共享包超过 500 kB，与本次 Token 构成修正无关。
+
+### 已知限制
+
+- 不同 Provider 的缓存字段语义可能不同；悬浮窗以 `cache_read_tokens` 明确表示“缓存命中”，并通过边界限制避免异常数据产生负的未命中输入。
+
+## 2026-08-21：主统计周期改为当天零点至今
+
+### 背景
+
+概览、模型、供应商、Token、错误监控和悬浮窗原本将 `24h` 作为从当前时刻向前推 24 小时的滚动窗口。用户要求默认统计改为当天零点至当前时刻。
+
+### 任务拆分
+
+| 阶段 | 任务 | 结果 |
+| --- | --- | --- |
+| 后端 | 将主统计 `24h` 范围起点改为本地当天 00:00:00 | 已完成 |
+| 前端 | 更新主界面、错误监控和悬浮窗的周期文案与请求筛选起点 | 已完成 |
+| 测试 | 验证昨日最后一秒的记录不进入今日统计 | 通过 |
+
+### 设计与实施
+
+`backend/database/queries.py` 保持统计 API 的 `24h` 参数不变以兼容现有客户端，但 `range_since("24h")` 现在返回本地当天 `00:00:00`。因此 summary、模型与 Provider 聚合、趋势及错误分布共享“今日”范围，并在零点自动重置。
+
+`frontend/src/App.vue` 和 `frontend/src/views/ErrorsView.vue` 将该周期显示为“今日（零点至今）”。错误列表使用相同的本地零点作为请求筛选起点，避免列表与上方错误指标口径不一致。`frontend/src/views/TrayOverviewView.vue` 将标签从 `24H` 改为“今日”。
+
+### 交互边界
+
+- 7 天与 30 天继续采用滚动窗口。
+- 费用分析页的“最近24小时”周期不变；其已有“今日”周期仍单独按当天统计。
+- API 参数值仍为 `24h`，外部调用方无需修改请求参数。
+
+### 验证记录
+
+- 后端测试：执行 `.\\.venv\\Scripts\\python.exe -m pytest tests/test_database.py tests/test_stats_api.py -q`，结果为 `14 passed in 0.98s`。
+- pytest 输出一条既有的 `asyncio_default_fixture_loop_scope` 弃用警告。
+
+### 已知限制
+
+- 统计日的边界使用运行 TokenLens 主机的本地时间；若请求记录由不同时区的外部系统写入，需确保其 `created_at` 格式与本地时区一致。

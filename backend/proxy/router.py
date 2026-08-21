@@ -21,6 +21,13 @@ def _classify(rest: str) -> str | None:
     return None
 
 
+def _upstream_endpoint(rest: str, path_mode: str) -> str:
+    """Map the stable local /v1 route to the provider's upstream route."""
+    if path_mode == "codex":
+        return f"/{rest}"
+    return f"/v1/{rest}"
+
+
 @router.api_route("/{provider}/v1/{rest:path}",
                   methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
 async def proxy_endpoint(provider: str, rest: str, request: Request):
@@ -39,7 +46,7 @@ async def proxy_endpoint(provider: str, rest: str, request: Request):
                 raise HTTPException(status_code=413, detail="request body too large")
 
     protocol = _classify(rest)
-    endpoint = f"/v1/{rest}"
+    endpoint = _upstream_endpoint(rest, cfg.upstream_path_mode)
     body, model = None, None
     if raw_body:
         if "application/json" not in (request.headers.get("content-type") or ""):
