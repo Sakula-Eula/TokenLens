@@ -11,12 +11,14 @@ def test_load_valid(tmp_path):
             "provider_a": {"type": "openai", "base_url": "https://api.example.com", "api_key": "sk-1"},
             "provider_b": {"type": "anthropic", "base_url": "https://api.anthropic.com/"},
         }
+            "provider_c": {"type": "responses", "base_url": "https://api.openai.com"},
     }), encoding="utf-8")
     cfg = load_config(p)
     assert cfg["provider_a"] == ProviderConfig("provider_a", "openai", "https://api.example.com", "sk-1")
     assert cfg["provider_b"].base_url == "https://api.anthropic.com"
     assert cfg["provider_b"].api_key is None
 
+    assert cfg["provider_c"].type == "responses"
 
 def test_missing_file_returns_empty(tmp_path):
     assert load_config(tmp_path / "nope.yaml") == {}

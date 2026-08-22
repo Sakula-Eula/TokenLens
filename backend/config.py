@@ -23,8 +23,8 @@ def _normalize_provider(name: str, item: dict) -> ProviderConfig:
     if not name or not _PROVIDER_NAME.fullmatch(name):
         raise ValueError("provider name may only contain letters, numbers, '.', '_' and '-'")
     ptype = item.get("type")
-    if ptype not in ("openai", "anthropic"):
-        raise ValueError(f"provider '{name}': type must be openai or anthropic")
+    if ptype not in ("openai", "responses", "anthropic"):
+        raise ValueError(f"provider '{name}': type must be openai, responses or anthropic")
     base_url = str(item.get("base_url", "")).strip().rstrip("/")
     if base_url.endswith("/v1"):
         raise ValueError(f"provider '{name}': base_url must not end with /v1")

@@ -52,10 +52,14 @@ providers:
     # api_key: sk-xxx
 ```
 
-`base_url` 不应以 `/v1` 结尾。以 `openai` 为例：
+`base_url` 不应以 `/v1` 结尾。保存 Provider 后，在设置页可直接复制对应的 Harness Base URL；其固定格式为 `http://127.0.0.1:7788/<provider 名称>/v1`。将该地址填入 CC Switch、Codex、Claude Code 或其他 harness 的 Base URL。
 
-- OpenAI Compatible：`http://127.0.0.1:7788/openai/v1/chat/completions`
-- Anthropic Messages：`http://127.0.0.1:7788/openai/v1/messages`
+| 协议 | Provider 类型 | Harness Base URL | harness 请求路径 |
+| --- | --- | --- | --- |
+| OpenAI Compatible | `openai` | `http://127.0.0.1:7788/openai/v1` | `/chat/completions` |
+| OpenAI Responses | `responses` | `http://127.0.0.1:7788/responses/v1` | `/responses` |
+| Anthropic Messages | `anthropic` | `http://127.0.0.1:7788/anthropic/v1` | `/messages` |
+
 
 当客户端已发送相应认证头时，TokenLens 原样转发；只有客户端未发送认证头时，才使用 `config.yaml` 中的 `api_key` 回退。
 

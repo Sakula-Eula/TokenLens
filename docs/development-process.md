@@ -1069,3 +1069,29 @@ Dashboard 标题栏已替换为 TokenLens 图标后，用户要求将标题文�
 ### 已知限制
 
 - 统计日的边界使用运行 TokenLens 主机的本地时间；若请求记录由不同时区的外部系统写入，需确保其 `created_at` 格式与本地时区一致。
+
+## 2026-08-22：更新 Dashboard 左上角品牌 Logo
+
+### 背景
+
+用户要求将 Dashboard 左上角的旧版图标与文字替换为 `assets/tokenlens.png`。
+
+### 任务拆分
+
+| 阶段 | 任务 | 结果 |
+| --- | --- | --- |
+| 前端 | 改为加载根目录的 `tokenlens.png` 品牌资源 | 已完成 |
+| 布局 | 按资源的完整横向比例展示，不重复渲染文字 | 已完成 |
+| 验证 | 执行 Vue 生产构建与差异空白检查 | 通过 |
+
+### 设计与实施
+
+`frontend/src/App.vue` 使用 Vite 的 `import.meta.glob` 加载 `assets/tokenlens.png`。侧栏与移动端顶部统一使用单个完整品牌图；Logo 宽度设为 151px，以适配 210px 侧栏的现有内边距。
+
+### 验证记录
+
+- Vue 构建：在 `frontend/` 执行 `npm run build`，Vite 成功转换 683 个模块并打包 `tokenlens-CHXauNzy.png`。
+- `git diff --check -- frontend/src/App.vue`：通过；仅出现 Git 的既有 LF/CRLF 转换提示。
+
+### 已知限制
+- 未执行浏览器截图验证；Logo 的最终显示比例依赖提供的 PNG 内容及 WebView2 渲染。

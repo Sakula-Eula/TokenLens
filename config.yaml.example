@@ -5,7 +5,7 @@
 # 1. 每个 provider 的 key 名（如 openai、anthropic）就是路由名，
 #    在 CC Switch 中把 Base URL 改为 http://127.0.0.1:7788/<key名>
 # 2. base_url 不含 /v1 后缀（结尾有 /v1 会启动报错）
-# 3. type 只能是 openai 或 anthropic；upstream_path_mode 默认为 v1
+# 3. type 可选 openai、responses 或 anthropic；upstream_path_mode 默认为 v1
 #    - v1：上游路径为 /v1/...
 #    - codex：本地仍使用 /<provider>/v1/...，但上游改为 /...；用于 CC Switch 的 Codex 登录模式
 # 4. api_key 可省略：
@@ -24,6 +24,12 @@ providers:
     type: anthropic
     base_url: https://api.anthropic.com
     # api_key: sk-ant-xxx
+
+  # OpenAI Responses API（harness 地址仍为 http://127.0.0.1:7788/responses/v1）
+  responses:
+    type: responses
+    base_url: https://api.openai.com
+    # api_key: sk-xxx
 
   # 将 CC Switch 的 Codex 官方链接替换为 http://127.0.0.1:7788/codex/v1 后，
   # 在此填写其原本使用的实际上游地址。不要在此处粘贴 auth.json 或登录令牌。

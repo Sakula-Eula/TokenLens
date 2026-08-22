@@ -10,7 +10,7 @@ router = APIRouter()
 
 class ProviderInput(BaseModel):
     name: str = Field(min_length=1, max_length=80)
-    type: Literal["openai", "anthropic"]
+    type: Literal["openai", "responses", "anthropic"]
     base_url: str = Field(min_length=1, max_length=2048)
     api_key: str | None = Field(default=None, max_length=4096)
     clear_api_key: bool = False
