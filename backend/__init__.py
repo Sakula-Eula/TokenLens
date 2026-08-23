@@ -44,7 +44,15 @@ def create_app(db_path: Path | None = None, config_path: Path | None = None,
     async def health():
         return {"status": "ok"}
 
-    from starlette.responses import FileResponse
+    from starlette.responses import FileResponse, Response
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        icon = ROOT / "assets" / "favicon.ico"
+        if not icon.exists():
+            return Response(status_code=204)
+        return FileResponse(icon)
+
     from starlette.staticfiles import StaticFiles
 
     dist = ROOT / "frontend" / "dist"
