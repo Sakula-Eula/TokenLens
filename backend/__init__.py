@@ -53,7 +53,7 @@ def create_app(db_path: Path | None = None, config_path: Path | None = None,
             return FileResponse(dist / "index.html")
 
         for route_path in ("/", "/dashboard", "/models", "/providers", "/tokens", "/costs",
-                           "/requests", "/errors", "/settings", "/widget"):
+                           "/requests", "/settings", "/widget"):
             app.add_api_route(route_path, frontend_app, methods=["GET"], include_in_schema=False)
         assets = dist / "assets"
         if assets.exists():

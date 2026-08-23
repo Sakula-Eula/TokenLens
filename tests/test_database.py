@@ -95,6 +95,9 @@ def test_trend_buckets(tmp_path):
     hours = queries.trend_stats("24h")
     assert len(hours) == 1
     assert all("bucket" in h and "total_tokens" in h for h in hours)
+    rolling_hours = queries.trend_stats("last24h")
+    assert now.strftime("%Y-%m-%dT%H") in {item["bucket"] for item in rolling_hours}
+    assert all("bucket" in item and "total_tokens" in item for item in rolling_hours)
     days = queries.trend_stats("7d")
     assert len(days) >= 1
 

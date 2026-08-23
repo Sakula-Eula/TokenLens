@@ -68,6 +68,7 @@ async def test_trend_and_bad_range(app, client):
     database.init_db(app.state.db_path)
     database.insert_request(_record())
     assert (await client.get("/api/stats/trend", params={"range": "24h"})).status_code == 200
+    assert (await client.get("/api/stats/trend", params={"range": "last24h"})).status_code == 200
     assert (await client.get("/api/stats/trend", params={"range": "9d"})).status_code == 400
     assert (await client.get("/api/stats/summary", params={"range": "9d"})).status_code == 400
     assert (await client.get("/api/stats/models", params={"range": "9d"})).status_code == 400

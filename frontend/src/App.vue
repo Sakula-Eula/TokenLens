@@ -26,7 +26,6 @@ const navigation = [
   { id: "tokens", path: "/tokens", label: "Token", icon: "wallet" },
   { id: "costs", path: "/costs", label: "费用", icon: "coins" },
   { id: "requests", path: "/requests", label: "请求", icon: "request" },
-  { id: "errors", path: "/errors", label: "错误", icon: "alert" },
   { id: "settings", path: "/settings", label: "设置", icon: "settings" },
 ];
 
@@ -65,14 +64,14 @@ async function manualRefresh() {
       <header class="topbar">
         <div class="mobile-brand"><img class="brand-logo" :src="logoUrl" alt="TokenLens" /></div>
         <div class="toolbar">
-          <label v-if="route.meta.range" class="range-select"><select v-model="range" aria-label="统计时间范围"><option value="24h">今日（零点至今）</option><option value="7d">最近7天</option><option value="30d">最近30天</option></select><AppIcon name="calendar" :size="16" /></label>
+          <label v-if="route.meta.range" class="range-select"><select v-model="range" aria-label="统计时间范围"><option value="24h">今日</option><option value="7d">最近7天</option><option value="30d">最近30天</option></select><AppIcon name="calendar" :size="16" /></label>
           <label class="auto-refresh"><span>自动刷新</span><input v-model="autoRefresh" type="checkbox" /><span class="switch" aria-hidden="true"></span></label>
           <button class="refresh-button" type="button" :disabled="refreshing" @click="manualRefresh"><AppIcon name="refresh" :size="17" :class="{ spinning: refreshing }" /><span>{{ refreshing ? "刷新中" : "刷新" }}</span></button>
         </div>
       </header>
       <main>
         <RouterView v-slot="{ Component }">
-          <component :is="Component" ref="viewRef" v-bind="viewProps" @open-errors="router.push('/errors')" @update-refresh-interval="updateRefreshInterval" />
+          <component :is="Component" ref="viewRef" v-bind="viewProps" @open-errors="router.push({ path: '/requests', query: { status: 'failed' } })" @update-refresh-interval="updateRefreshInterval" />
         </RouterView>
       </main>
     </section>

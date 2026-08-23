@@ -7,7 +7,7 @@ def _row_to_dict(row) -> dict:
     return {k: row[k] for k in row.keys()}
 
 
-RANGE_KEYS = ("24h", "7d", "30d")
+RANGE_KEYS = ("24h", "last24h", "7d", "30d")
 GROUP_SORT_FIELDS = {
     "requests", "input_tokens", "output_tokens", "cache_tokens",
     "total_tokens", "total_cost_micros", "avg_latency_ms", "errors", "error_rate",
@@ -20,6 +20,8 @@ def range_since(range_key: str) -> str:
     now = datetime.now()
     if range_key == "24h":
         return now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
+    if range_key == "last24h":
+        return (now - timedelta(hours=24)).isoformat(timespec="seconds")
     return (now - timedelta(days=int(range_key[:-1]))).isoformat(timespec="seconds")
 
 
@@ -163,7 +165,7 @@ def grouped_stats(column: str, filters: dict, limit: int = 50, offset: int = 0,
 
 def trend_stats(range_key: str, filters: dict | None = None) -> list[dict]:
     assert range_key in RANGE_KEYS
-    if range_key == "24h":
+    if range_key in ("24h", "last24h"):
         bucket_expr = "substr(created_at, 1, 13)"
     else:
         bucket_expr = "substr(created_at, 1, 10)"

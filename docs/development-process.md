@@ -1095,3 +1095,85 @@ Dashboard 标题栏已替换为 TokenLens 图标后，用户要求将标题文�
 
 ### 已知限制
 - 未执行浏览器截图验证；Logo 的最终显示比例依赖提供的 PNG 内容及 WebView2 渲染。
+
+## 2026-08-23：将错误监控整合至请求记录
+
+### 背景
+
+用户要求移除独立“错误监控”页面及其导航入口，并将用于排查失败请求的功能整合到“请求记录”中。
+
+### 需求澄清
+
+- 删除独立 `/errors` 页面、前端路由、侧栏导航和服务端 SPA 页面兜底。
+- 保留错误统计接口与请求详情中的错误类型，以免影响现有排查能力。
+- Dashboard 的“洞察 & 提醒”点击后进入“请求记录”，并自动应用“全部失败”筛选。
+
+### 任务拆分
+
+| 阶段 | 任务 | 结果 |
+| --- | --- | --- |
+| 前端 | 将错误统计、状态码/类型分布和错误类型列表列整合至请求记录 | 已完成 |
+| 路由 | 删除错误监控页面、导航与 `/errors` SPA 兜底 | 已完成 |
+| 测试 | 验证错误统计接口、已移除路由和 Vue 生产构建 | 通过 |
+
+### 设计与实施
+
+`frontend/src/views/RequestsView.vue` 使用既有 `/api/stats/errors` 获取错误请求数、错误率、主要状态码、主要错误类型及分布；统计会同步 Provider、模型、状态和日期筛选。请求列表新增“错误类型”列，保留单行详情抽屉的完整错误信息。请求页面接入主统计周期选择，以便错误概览与 Dashboard 的周期口径一致。
+
+`frontend/src/App.vue` 删除“错误”导航项，并将 Dashboard 的 `open-errors` 事件重定向到 `/requests?status=failed`。`frontend/src/router/index.js` 和 `backend/__init__.py` 移除 `/errors` 页面路由与 SPA 兜底；`frontend/src/views/ErrorsView.vue` 已删除。
+
+### 交互边界
+
+- `/api/stats/errors` 继续保留，作为请求页错误概览的数据来源，外部 API 调用方无需迁移。
+- 选择“成功”或 `2xx` 时，错误概览显示为零；选择失败、4xx、5xx 或具体状态码时，概览与请求列表的状态筛选一致。
+- 旧的 `/errors` 地址现在返回 404，不再重定向或渲染旧页面。
+
+### 验证记录
+
+- 后端测试：执行 `.\.venv\Scripts\python.exe -m pytest tests\test_stats_api.py tests\test_spa_routes.py -q`，结果为 `8 passed in 0.93s`。pytest 输出一条既有的 `asyncio_default_fixture_loop_scope` 弃用警告。
+- Vue 构建：在 `frontend/` 执行 `npm run build`，Vite 成功转换 681 个模块并生成生产资源。
+- 构建仍提示现有共享包压缩后超过 500 kB，与本次页面整合无关。
+
+### 已知限制
+
+- 项目尚无 Vue 组件交互测试；请求页的错误概览通过生产构建和后端接口/路由测试验证。
+## 2026-08-23：Dashboard Token 趋势改为固定 24 小时柱状图
+
+### 背景
+
+用户要求将 Dashboard 的 Token 使用趋势从折线图改为柱状图，并固定展示最近 24 小时，每小时一根柱。
+
+### 需求澄清
+
+- 趋势图固定显示滚动最近 24 小时，共 24 个小时槽位。
+- 每根柱代表该小时内的总 Token 用量；没有请求的小时显示为 0。
+- Dashboard 顶部周期选择继续影响其他概览数据，不改变该趋势图的固定窗口。
+
+### 任务拆分
+
+| 阶段 | 任务 | 结果 |
+| --- | --- | --- |
+| 后端 | 增加 `last24h` 滚动范围并按小时聚合趋势数据 | 已完成 |
+| 前端 | 将趋势图改为柱状图并补齐 24 个小时槽位 | 已完成 |
+| 验证 | 执行数据库/API 测试、Vue 构建和差异检查 | 通过 |
+
+### 设计与实施
+
+`backend/database/queries.py` 增加 `last24h` 范围，其起点为当前时间向前推 24 小时；趋势聚合按 `YYYY-MM-DDTHH` 小时桶返回。`backend/api/stats.py` 接受该范围参数。
+
+`frontend/src/views/DashboardView.vue` 固定请求 `fetchTrend("last24h")`，以当前小时为终点生成连续 24 个本地时间小时槽位，并用接口结果填充；缺失槽位写入 0。ECharts 趋势系列改为 `bar`，柱顶圆角并限制柱宽，横轴显示 `HH:00`。图表标题更新为“最近 24 小时，每小时 Token 用量”。
+
+### 交互边界
+
+- 该固定窗口仅适用于 Dashboard 的 Token 趋势图；概览卡片、模型和供应商等仍由顶部周期选择控制。
+- 新的 `last24h` 是 API 扩展参数；原有 `24h` 继续表示当天零点至当前时刻，兼容既有页面。
+
+### 验证记录
+
+- 后端测试：执行 `.\.venv\Scripts\python.exe -m pytest tests\test_database.py tests\test_stats_api.py -q`，结果为 `14 passed in 0.91s`。pytest 输出一条既有的 `asyncio_default_fixture_loop_scope` 弃用警告。
+- Vue 构建：在 `frontend/` 执行 `npm run build`，Vite 成功转换 681 个模块并生成生产资源。
+- `git diff --check`：通过；仅出现 Git 的既有 LF/CRLF 转换提示。
+
+### 已知限制
+
+- 小时槽位使用运行 TokenLens 主机的本地时间；记录时间需与主机时区保持一致。

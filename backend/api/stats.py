@@ -3,12 +3,12 @@ from fastapi import APIRouter, HTTPException
 from backend.statistics import service
 
 router = APIRouter()
-VALID_RANGES = ("24h", "7d", "30d")
+VALID_RANGES = ("24h", "last24h", "7d", "30d")
 
 
 def _validate_range(range_key: str) -> str:
     if range_key not in VALID_RANGES:
-        raise HTTPException(status_code=400, detail="range must be 24h, 7d or 30d")
+        raise HTTPException(status_code=400, detail="range must be 24h, last24h, 7d or 30d")
     return range_key
 
 
