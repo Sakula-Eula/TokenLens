@@ -76,7 +76,6 @@ class StreamUsageParser:
             input_tokens=a.input_tokens if a else 0,
             output_tokens=b.output_tokens if b else 0,
             cache_read_tokens=a.cache_read_tokens if a else 0,
-            cache_write_tokens=a.cache_write_tokens if a else 0,
         ).finalize()
 
     def finish(self) -> Usage | None:

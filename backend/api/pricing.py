@@ -18,7 +18,6 @@ class PricingRuleInput(BaseModel):
     input_price_cny: Decimal = Field(default=Decimal("0"), ge=0)
     output_price_cny: Decimal = Field(default=Decimal("0"), ge=0)
     cache_read_price_cny: Decimal = Field(default=Decimal("0"), ge=0)
-    cache_write_price_cny: Decimal = Field(default=Decimal("0"), ge=0)
     input_includes_cache: bool = False
     priority: int = Field(default=0, ge=-10000, le=10000)
     enabled: bool = True

@@ -20,8 +20,8 @@ def providers(range_key: str = "24h", filters: dict | None = None, **paging) -> 
     return queries.grouped_stats("provider", queries.filters_for_range(range_key, filters), **paging)
 
 
-def trend(range_key: str, filters: dict | None = None) -> dict:
-    return {"items": queries.trend_stats(range_key, filters)}
+def trend(range_key: str, filters: dict | None = None, bucket_hours: int | None = None) -> dict:
+    return {"items": queries.trend_stats(range_key, filters, bucket_hours=bucket_hours)}
 
 
 def errors(range_key: str = "24h", filters: dict | None = None) -> dict:

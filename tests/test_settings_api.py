@@ -48,8 +48,8 @@ async def test_update_preserves_api_key_and_hot_loads_provider(client, config_pa
     response = await client.put("/api/settings/providers", json={"items": [
         {"name": "alpha", "type": "openai", "base_url": "https://new.example.com"},
         {"name": "beta", "type": "anthropic", "base_url": "https://api.anthropic.com", "api_key": "new-secret"},
-    ]})
         {"name": "gamma", "type": "responses", "base_url": "https://api.openai.com"},
+    ]})
     assert response.status_code == 200
     assert response.json()["restart_required"] is False
     saved = config_path.read_text(encoding="utf-8")

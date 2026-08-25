@@ -1,11 +1,11 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppIcon from "../components/AppIcon.vue";
 import ApiStateBanner from "../components/ApiStateBanner.vue";
 import ModelIcon from "../components/ModelIcon.vue";
 import RequestDetailDrawer from "../components/RequestDetailDrawer.vue";
-import { fetchErrors, fetchRequests } from "../api";
+import { deleteRequest, deleteRequests, fetchErrors, fetchRequests } from "../api";
 
 const props = defineProps({ range: { type: String, default: "24h" }, autoRefresh: { type: Boolean, default: true }, refreshInterval: { type: Number, default: 10000 } });
 const route = useRoute(); const router = useRouter();
@@ -15,6 +15,8 @@ const data = ref({ items: [], total: 0 });
 const errorStats = ref({ errors: 0, total_requests: 0, error_rate: 0, by_status: [], by_type: [] });
 const loading = ref(true);
 const error = ref(""); const updatedAt = ref(""); const detailId = ref(null);
+const deletingId = ref(null); const deletingFiltered = ref(false); const pendingDeletion = ref(null);
+const hasActiveFilters = computed(() => Object.values(filters.value).some(Boolean));
 let timer = null;
 
 async function refresh() {
@@ -36,6 +38,56 @@ async function refresh() {
   try { const [requestData, statsData] = await Promise.all([fetchRequests(params), fetchErrors(props.range, errorParams)]); data.value = requestData; errorStats.value = statsData; error.value = ""; updatedAt.value = new Date().toLocaleTimeString("zh-CN", { hour12: false }); syncQuery(); }
   catch (exc) { error.value = exc?.response?.data?.detail || "请求记录更新失败"; }
   finally { loading.value = false; }
+}
+
+function deletionFilters() {
+  const params = {};
+  if (filters.value.provider) params.provider_contains = filters.value.provider;
+  if (filters.value.model) params.model_contains = filters.value.model;
+  if (filters.value.date_from) params.date_from = filters.value.date_from;
+  if (filters.value.date_to) params.date_to = dayAfter(filters.value.date_to);
+  if (filters.value.status === "success") params.success = true;
+  else if (filters.value.status === "failed") params.success = false;
+  else if (/^[245]xx$/.test(filters.value.status)) params.status_group = filters.value.status;
+  else if (filters.value.status) params.status = Number(filters.value.status);
+  return params;
+}
+
+function deleteItem(item) {
+  pendingDeletion.value = { type: "single", item, label: item.request_id || `数据库记录 #${item.id}` };
+}
+
+function deleteFiltered() {
+  if (!hasActiveFilters.value || !data.value.total) return;
+  pendingDeletion.value = { type: "filtered", count: data.value.total, filters: deletionFilters() };
+}
+
+function closeDeletionDialog() {
+  if (!deletingId.value && !deletingFiltered.value) pendingDeletion.value = null;
+}
+
+async function confirmDeletion() {
+  const pending = pendingDeletion.value;
+  if (!pending) return;
+  try {
+    if (pending.type === "single") {
+      deletingId.value = pending.item.id;
+      await deleteRequest(pending.item.id);
+      if (detailId.value === pending.item.id) detailId.value = null;
+    } else {
+      deletingFiltered.value = true;
+      await deleteRequests(pending.filters);
+      detailId.value = null;
+      if (page.value > 1) page.value = 1;
+    }
+    await refresh();
+    pendingDeletion.value = null;
+  } catch (exc) {
+    error.value = exc?.response?.data?.detail || "删除请求记录失败";
+  } finally {
+    deletingId.value = null;
+    deletingFiltered.value = false;
+  }
 }
 
 function resetFilters() {
@@ -99,18 +151,18 @@ defineExpose({ refresh });
         <label><span>状态</span><select v-model="filters.status"><option value="">全部状态</option><option value="success">全部成功</option><option value="failed">全部失败</option><option value="2xx">全部 2xx</option><option value="4xx">全部 4xx</option><option value="5xx">全部 5xx</option><option v-for="code in [200, 400, 401, 403, 404, 408, 429, 500, 502, 503, 504]" :key="code" :value="String(code)">{{ code }}</option></select></label>
         <label><span>开始日期</span><input v-model="filters.date_from" type="date" :max="filters.date_to || undefined" /></label>
         <label><span>结束日期</span><input v-model="filters.date_to" type="date" :min="filters.date_from || undefined" /></label>
-        <button class="reset-button" type="button" @click="resetFilters"><AppIcon name="refresh" :size="15" />重置</button>
+        <button class="reset-button" type="button" @click="resetFilters"><AppIcon name="refresh" :size="15" />重置</button><button v-if="hasActiveFilters && data.total" class="delete-filtered-button" type="button" :disabled="deletingFiltered" @click="deleteFiltered"><AppIcon name="alert" :size="15" />{{ deletingFiltered ? "删除中…" : `删除筛选结果（${fmt(data.total)}）` }}</button>
       </div>
 
       <div class="table-wrap">
         <table>
-          <thead><tr><th>时间</th><th>Provider</th><th>模型</th><th>输入 Token</th><th>输出 Token</th><th>Cache Token</th><th>总 Token</th><th>耗时</th><th>状态</th><th>错误类型</th></tr></thead>
+          <thead><tr><th>时间</th><th>Provider</th><th>模型</th><th>输入 Token</th><th>输出 Token</th><th>Cache Token</th><th>总 Token</th><th>耗时</th><th>状态</th><th>错误类型</th><th class="action-cell">操作</th></tr></thead>
           <tbody>
             <tr v-for="item in data.items" :key="item.id" class="clickable" @click="detailId = item.id">
-              <td class="time-cell">{{ formatTime(item.created_at) }}</td><td><span class="provider-badge">{{ item.provider }}</span></td><td class="model-cell"><span><ModelIcon :model="item.model" :provider="item.provider" :size="24" />{{ item.model || "unknown" }}</span></td><td>{{ fmt(item.input_tokens) }}</td><td>{{ fmt(item.output_tokens) }}</td><td>{{ fmt((item.cache_read_tokens || 0) + (item.cache_write_tokens || 0)) }}</td><td class="total-cell">{{ fmt(item.total_tokens) }}</td><td>{{ (item.latency_ms / 1000).toFixed(1) }}s</td>
-              <td><span class="status" :class="item.success ? 'success' : 'error'"><i></i>{{ item.success ? "成功" : item.status_code }}</span></td><td>{{ item.error_type || "—" }}</td>
+              <td class="time-cell">{{ formatTime(item.created_at) }}</td><td><span class="provider-badge">{{ item.provider }}</span></td><td class="model-cell"><span><ModelIcon :model="item.model" :provider="item.provider" :size="24" />{{ item.model || "unknown" }}</span></td><td>{{ fmt(item.input_tokens) }}</td><td>{{ fmt(item.output_tokens) }}</td><td>{{ fmt(item.cache_read_tokens || 0) }}</td><td class="total-cell">{{ fmt(item.total_tokens) }}</td><td>{{ (item.latency_ms / 1000).toFixed(1) }}s</td>
+              <td><span class="status" :class="item.success ? 'success' : 'error'"><i></i>{{ item.success ? "成功" : item.status_code }}</span></td><td>{{ item.error_type || "—" }}</td><td class="action-cell"><button type="button" class="delete-row-button" :disabled="deletingId === item.id" @click.stop="deleteItem(item)">{{ deletingId === item.id ? "删除中…" : "删除" }}</button></td>
             </tr>
-            <tr v-if="!data.items.length"><td colspan="10" class="empty-cell">{{ loading ? "正在加载请求记录…" : "没有符合条件的请求记录" }}</td></tr>
+            <tr v-if="!data.items.length"><td colspan="11" class="empty-cell">{{ loading ? "正在加载请求记录…" : "没有符合条件的请求记录" }}</td></tr>
           </tbody>
         </table>
       </div>
@@ -120,6 +172,17 @@ defineExpose({ refresh });
         <div><button type="button" :disabled="page <= 1" @click="page--">上一页</button><button type="button" :disabled="page * 50 >= data.total" @click="page++">下一页</button></div>
       </footer>
     </section>
+    <Teleport to="body"><div v-if="pendingDeletion" class="delete-dialog-shell" role="presentation" @mousedown.self="closeDeletionDialog">
+      <section class="delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title">
+        <button class="delete-dialog-close" type="button" aria-label="关闭确认窗口" :disabled="deletingId !== null || deletingFiltered" @click="closeDeletionDialog">×</button>
+        <div class="delete-dialog-icon"><AppIcon name="alert" :size="24" /></div>
+        <h2 id="delete-dialog-title">确认永久删除？</h2>
+        <p v-if="pendingDeletion.type === 'single'">即将删除请求 <strong>{{ pendingDeletion.label }}</strong>。</p>
+        <p v-else>即将删除当前筛选条件下的 <strong>{{ fmt(pendingDeletion.count) }}</strong> 条请求记录。</p>
+        <div class="delete-dialog-warning"><AppIcon name="alert" :size="17" /><span>关联的费用快照也会一并删除，统计数据将随之更新。此操作不可撤销。</span></div>
+        <footer><button type="button" class="cancel-delete" :disabled="deletingId !== null || deletingFiltered" @click="closeDeletionDialog">取消</button><button type="button" class="confirm-delete" :disabled="deletingId !== null || deletingFiltered" @click="confirmDeletion">{{ deletingId !== null || deletingFiltered ? '删除中…' : '确认删除' }}</button></footer>
+      </section>
+    </div></Teleport>
     <RequestDetailDrawer :record-id="detailId" @close="detailId = null" />
   </div>
 </template>
@@ -130,10 +193,10 @@ defineExpose({ refresh });
 .request-count { display: flex; align-items: center; gap: 8px; padding: 9px 13px; border: 1px solid #e2e7ee; border-radius: 8px; color: #667085; background: #fff; font-size: 12px; }.request-count .app-icon { color: #2476f5; }.request-count b { color: #101828; }
 .error-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }.error-overview article, .error-breakdown article { min-width: 0; border: 1px solid #e6ebf2; border-radius: 10px; background: #fff; box-shadow: 0 2px 8px rgba(16,24,40,.035); }.error-overview article { display: grid; gap: 5px; min-height: 108px; padding: 16px; }.error-overview span, .error-overview small { color: #7b879b; font-size: 11px; }.error-overview b { overflow: hidden; color: #101828; font-size: 23px; text-overflow: ellipsis; white-space: nowrap; }.error-overview .type-value { font-size: 16px; }.error-breakdown { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }.error-breakdown article { padding: 15px 16px; }.error-breakdown h2 { margin: 0 0 12px; color: #344054; font-size: 13px; }.chips { display: flex; flex-wrap: wrap; gap: 8px; min-height: 28px; align-items: center; }.chips span { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border-radius: 6px; color: #667085; background: #f5f7fa; font-size: 11px; }.chips span b { color: #b42318; }.chips em { color: #98a2b3; font-size: 11px; font-style: normal; }
 .request-panel { overflow: hidden; border: 1px solid #e6ebf2; border-radius: 10px; background: #fff; box-shadow: 0 2px 8px rgba(16,24,40,.035); }
-.filters { display: flex; align-items: flex-end; gap: 14px; padding: 18px; border-bottom: 1px solid #edf1f6; }.filters label { min-width: 160px; display: grid; gap: 7px; color: #667085; font-size: 11px; }.filters input, .filters select { height: 38px; border: 1px solid #dfe5ed; border-radius: 7px; padding: 0 11px; color: #344054; outline: none; background: #fff; }.filters input:focus, .filters select:focus { border-color: #8db6f7; box-shadow: 0 0 0 3px #2677f412; }.reset-button { height: 38px; display: flex; align-items: center; gap: 6px; border: 1px solid #dfe5ed; border-radius: 7px; padding: 0 14px; color: #667085; background: #fff; }.reset-button:hover { color: #1769ef; border-color: #a9c7f8; }
+.filters { display: flex; align-items: flex-end; gap: 14px; padding: 18px; border-bottom: 1px solid #edf1f6; }.filters label { min-width: 160px; display: grid; gap: 7px; color: #667085; font-size: 11px; }.filters input, .filters select { height: 38px; border: 1px solid #dfe5ed; border-radius: 7px; padding: 0 11px; color: #344054; outline: none; background: #fff; }.filters input:focus, .filters select:focus { border-color: #8db6f7; box-shadow: 0 0 0 3px #2677f412; }.reset-button, .delete-filtered-button { height: 38px; display: flex; align-items: center; gap: 6px; border: 1px solid #dfe5ed; border-radius: 7px; padding: 0 14px; color: #667085; background: #fff; }.reset-button:hover { color: #1769ef; border-color: #a9c7f8; }.delete-filtered-button { color: #b42318; border-color: #fecaca; background: #fff7f7; }.delete-filtered-button:hover:not(:disabled) { border-color: #fda4af; background: #fff1f1; }.delete-filtered-button:disabled { opacity: .65; cursor: wait; }
 .table-wrap { width: 100%; overflow-x: auto; }table { width: 100%; border-collapse: collapse; color: #475467; font-size: 12px; white-space: nowrap; }th { height: 42px; color: #7b879b; background: #fafbfd; font-weight: 550; text-align: left; }td { height: 52px; border-top: 1px solid #edf1f6; }th, td { padding: 0 15px; }.time-cell { color: #667085; }.model-cell, .total-cell { color: #26344d; font-weight: 650; }.model-cell > span { display: inline-flex; align-items: center; gap: 7px; }.provider-badge { display: inline-flex; padding: 4px 8px; border-radius: 5px; color: #1769ef; background: #edf4ff; }.status { display: inline-flex; align-items: center; gap: 6px; }.status i { width: 6px; height: 6px; border-radius: 50%; }.status.success { color: #138a62; }.status.success i { background: #20b77a; }.status.error { color: #df3030; }.status.error i { background: #ef4444; }.empty-cell { height: 260px; color: #98a2b3; text-align: center; }
-.clickable { cursor: pointer; }.clickable:hover { background: #f8fbff; }
-.pagination { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 10px 18px; border-top: 1px solid #edf1f6; color: #7b879b; font-size: 11px; }.pagination div { display: flex; gap: 8px; }.pagination button { height: 32px; border: 1px solid #dfe5ed; border-radius: 6px; padding: 0 13px; color: #344054; background: #fff; }.pagination button:hover:not(:disabled) { color: #1769ef; border-color: #a9c7f8; }.pagination button:disabled { opacity: .45; cursor: not-allowed; }
+.clickable { cursor: pointer; }.clickable:hover { background: #f8fbff; }.action-cell { text-align: right; }.delete-row-button { border: 0; border-radius: 6px; padding: 6px 9px; color: #b42318; background: #fff1f1; font-size: 11px; cursor: pointer; }.delete-row-button:hover:not(:disabled) { background: #fee2e2; }.delete-row-button:disabled { opacity: .65; cursor: wait; }
+.delete-dialog-shell { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 20px; background: rgba(15,23,42,.42); backdrop-filter: blur(3px); }.delete-dialog { position: relative; width: min(430px, 100%); padding: 27px; border: 1px solid #fee2e2; border-radius: 14px; background: #fff; box-shadow: 0 24px 64px rgba(15,23,42,.24); }.delete-dialog-icon { width: 46px; height: 46px; display: grid; place-items: center; margin-bottom: 15px; border-radius: 12px; color: #d92d20; background: #fff1f1; }.delete-dialog h2 { margin: 0; color: #101828; font-size: 19px; }.delete-dialog > p { margin: 8px 0 17px; color: #667085; font-size: 13px; line-height: 1.55; }.delete-dialog > p strong { color: #344054; overflow-wrap: anywhere; }.delete-dialog-warning { display: flex; align-items: flex-start; gap: 8px; padding: 11px; border-radius: 8px; color: #b42318; background: #fff5f5; font-size: 11px; line-height: 1.55; }.delete-dialog-warning .app-icon { flex: none; margin-top: 1px; }.delete-dialog footer { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }.delete-dialog footer button { height: 36px; border-radius: 7px; padding: 0 14px; font-size: 12px; }.cancel-delete { border: 1px solid #dfe5ed; color: #475467; background: #fff; }.confirm-delete { border: 1px solid #d92d20; color: #fff; background: #d92d20; }.confirm-delete:hover:not(:disabled) { background: #b42318; }.delete-dialog footer button:disabled, .delete-dialog-close:disabled { opacity: .6; cursor: wait; }.delete-dialog-close { position: absolute; top: 13px; right: 13px; width: 30px; height: 30px; border: 0; border-radius: 7px; color: #667085; background: #f4f6f8; font-size: 20px; }.pagination { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 10px 18px; border-top: 1px solid #edf1f6; color: #7b879b; font-size: 11px; }.pagination div { display: flex; gap: 8px; }.pagination button { height: 32px; border: 1px solid #dfe5ed; border-radius: 6px; padding: 0 13px; color: #344054; background: #fff; }.pagination button:hover:not(:disabled) { color: #1769ef; border-color: #a9c7f8; }.pagination button:disabled { opacity: .45; cursor: not-allowed; }
 @media (max-width: 960px) { .error-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .filters { flex-wrap: wrap; }.filters label { min-width: calc(50% - 8px); flex: 1; }.reset-button { margin-left: auto; }.page-heading { min-height: 86px; }.request-count { padding: 8px; }.error-breakdown { grid-template-columns: 1fr; } }
 @media (max-width: 480px) { .filters label { min-width: 100%; }.page-heading p { font-size: 11px; }.request-count span { display: none; }.pagination { align-items: flex-start; flex-direction: column; } }

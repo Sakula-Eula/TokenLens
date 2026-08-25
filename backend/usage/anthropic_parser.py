@@ -10,5 +10,4 @@ def parse_usage(payload: dict) -> Usage | None:
         input_tokens=_num(usage.get("input_tokens")),
         output_tokens=_num(usage.get("output_tokens")),
         cache_read_tokens=_num(usage.get("cache_read_input_tokens")),
-        cache_write_tokens=_num(usage.get("cache_creation_input_tokens")),
     ).finalize()

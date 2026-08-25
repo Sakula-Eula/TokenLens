@@ -14,7 +14,6 @@ CREATE TABLE IF NOT EXISTS api_requests (
     input_tokens INTEGER DEFAULT 0,
     output_tokens INTEGER DEFAULT 0,
     cache_read_tokens INTEGER DEFAULT 0,
-    cache_write_tokens INTEGER DEFAULT 0,
     total_tokens INTEGER DEFAULT 0,
     latency_ms INTEGER,
     status_code INTEGER,
@@ -34,7 +33,6 @@ CREATE TABLE IF NOT EXISTS pricing_rules (
     input_price_micros INTEGER NOT NULL DEFAULT 0,
     output_price_micros INTEGER NOT NULL DEFAULT 0,
     cache_read_price_micros INTEGER NOT NULL DEFAULT 0,
-    cache_write_price_micros INTEGER NOT NULL DEFAULT 0,
     input_includes_cache BOOLEAN NOT NULL DEFAULT 0,
     priority INTEGER NOT NULL DEFAULT 0,
     enabled BOOLEAN NOT NULL DEFAULT 1,
@@ -55,15 +53,12 @@ CREATE TABLE IF NOT EXISTS request_costs (
     input_tokens INTEGER NOT NULL DEFAULT 0,
     output_tokens INTEGER NOT NULL DEFAULT 0,
     cache_read_tokens INTEGER NOT NULL DEFAULT 0,
-    cache_write_tokens INTEGER NOT NULL DEFAULT 0,
     input_price_micros INTEGER NOT NULL DEFAULT 0,
     output_price_micros INTEGER NOT NULL DEFAULT 0,
     cache_read_price_micros INTEGER NOT NULL DEFAULT 0,
-    cache_write_price_micros INTEGER NOT NULL DEFAULT 0,
     input_cost_micros INTEGER NOT NULL DEFAULT 0,
     output_cost_micros INTEGER NOT NULL DEFAULT 0,
     cache_read_cost_micros INTEGER NOT NULL DEFAULT 0,
-    cache_write_cost_micros INTEGER NOT NULL DEFAULT 0,
     total_cost_micros INTEGER NOT NULL DEFAULT 0,
     calculated_at DATETIME NOT NULL,
     FOREIGN KEY(request_row_id) REFERENCES api_requests(id),
@@ -78,7 +73,7 @@ CREATE TABLE IF NOT EXISTS app_metadata (
 
 FIELDS = (
     "request_id", "provider", "model", "endpoint", "stream",
-    "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens",
+    "input_tokens", "output_tokens", "cache_read_tokens",
     "total_tokens", "latency_ms", "status_code", "success", "error_type", "created_at",
 )
 

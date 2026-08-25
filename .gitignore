@@ -2,7 +2,15 @@ node_modules/
 data/
 coverage/
 .env
+.env.*
+!.env.example
+!.env.*.example
 config.yaml
+config.local.yaml
+config.local.yml
+config.*.local.yaml
+config.*.local.yml
+auth.json
 .idea/
 
 __pycache__/
@@ -13,3 +21,10 @@ frontend/node_modules/
 *.db
 *.db-wal
 *.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+*.pem
+*.key
+*.p12
+*.pfx

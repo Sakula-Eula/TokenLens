@@ -5,7 +5,6 @@ const parts = computed(() => [
   ["Input", props.summary.input_cost_micros, "#2476f5"],
   ["Output", props.summary.output_cost_micros, "#20b77a"],
   ["Cache Read", props.summary.cache_read_cost_micros, "#8b5cf6"],
-  ["Cache Write", props.summary.cache_write_cost_micros, "#f79009"],
 ]);
 const total = computed(() => Math.max(1, Number(props.summary.total_cost_micros || 0)));
 function money(value) { return `¥${(Number(value || 0) / 1_000_000).toFixed(6).replace(/0+$/, "").replace(/\.$/, ".00")}`; }

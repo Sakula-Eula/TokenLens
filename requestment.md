@@ -352,7 +352,6 @@ class Usage:
     input_tokens: int = 0
     output_tokens: int = 0
     cache_read_tokens: int = 0
-    cache_write_tokens: int = 0
     total_tokens: int = 0
 ```
 
@@ -363,14 +362,13 @@ class Usage:
 | `input_tokens` | `usage.prompt_tokens` | `usage.input_tokens`（`message_start` 事件） |
 | `output_tokens` | `usage.completion_tokens` | `usage.output_tokens`（`message_delta` 事件） |
 | `cache_read_tokens` | `usage.prompt_tokens_details.cached_tokens` | `usage.cache_read_input_tokens` |
-| `cache_write_tokens` | （无对应字段） | `usage.cache_creation_input_tokens` |
 | `total_tokens` | `usage.total_tokens` | 同左 |
 
 ### 9.2 计算规则
 
 * `total_tokens` 优先使用 Provider 返回值；未提供时计算 `input_tokens + output_tokens`。
-* 不同 Provider 对 Cache Token 的定义可能不同，数据库中 Cache Read / Cache Write **单独保存**，不强制参与 total 计算。
-* MVP Dashboard 展示时 Cache Read 与 Cache Write 合并显示为 `Cache Token`，后续版本再细分。
+* 不同 Provider 对 Cache Token 的定义可能不同，数据库中 Cache Read **单独保存**，不强制参与 total 计算。
+* 项目只统计 Cache Read（缓存命中），不统计 Cache Write（缓存写入）；`cache_tokens` 即 `cache_read_tokens`。
 
 这样以后增加其他 Provider 时不会影响 Dashboard。
 
@@ -388,7 +386,6 @@ model
 input_tokens
 output_tokens
 cache_read_tokens
-cache_write_tokens
 total_tokens
 
 latency_ms
@@ -412,7 +409,6 @@ created_at
   "input_tokens": 12500,
   "output_tokens": 3210,
   "cache_read_tokens": 8000,
-  "cache_write_tokens": 1200,
   "total_tokens": 15710,
   "latency_ms": 8420,
   "status_code": 200,
@@ -434,7 +430,7 @@ created_at
 * Input Token：优先读取 Provider 响应中返回的 Usage 数据（映射规则见第 9 章）。
 * Output Token：同上。
 * Total Token：见 9.2 节计算规则。
-* Cache Token：见 9.2 节，数据库单独保存 cache_read / cache_write。
+* Cache Token：见 9.2 节，数据库单独保存 cache_read（`cache_tokens` 即 `cache_read_tokens`），不统计 cache write。
 
 ## 12. Dashboard
 
@@ -668,7 +664,6 @@ CREATE TABLE api_requests (
     output_tokens INTEGER DEFAULT 0,
 
     cache_read_tokens INTEGER DEFAULT 0,
-    cache_write_tokens INTEGER DEFAULT 0,
 
     total_tokens INTEGER DEFAULT 0,
 
@@ -1105,7 +1100,7 @@ MVP 验证成功后加入：
 
 ### V0.2
 
-**费用统计（基础版已实现）**：模型价格规则和请求费用快照按人民币统计 `input cost + output cost + cache read cost + cache write cost`，展示今日消费、本月消费、模型消费排行、Provider 消费排行及未定价用量。阶梯价、账单对账和费用修正仍属于后续能力。
+**费用统计（基础版已实现）**：模型价格规则和请求费用快照按人民币统计 `input cost + output cost + cache read cost`，展示今日消费、本月消费、模型消费排行、Provider 消费排行及未定价用量。阶梯价、账单对账和费用修正仍属于后续能力。
 
 **项目来源**：支持 Codex、Claude Code、DocMind、RAG System 等来源区分。例如请求 Header `X-TokenLens-Client: codex`，最终可以分析"Codex 今天用了 3.2M Token"。
 

@@ -30,7 +30,6 @@ def build_record(*, request_id, provider, model, endpoint, stream, usage: Usage 
         "input_tokens": u.get("input_tokens", 0),
         "output_tokens": u.get("output_tokens", 0),
         "cache_read_tokens": u.get("cache_read_tokens", 0),
-        "cache_write_tokens": u.get("cache_write_tokens", 0),
         "total_tokens": u.get("total_tokens", 0),
         "latency_ms": latency_ms,
         "status_code": status_code,

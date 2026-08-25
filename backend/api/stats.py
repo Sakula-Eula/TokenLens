@@ -3,12 +3,12 @@ from fastapi import APIRouter, HTTPException
 from backend.statistics import service
 
 router = APIRouter()
-VALID_RANGES = ("24h", "last24h", "7d", "30d")
+VALID_RANGES = ("12h", "24h", "last24h", "7d", "30d")
 
 
 def _validate_range(range_key: str) -> str:
     if range_key not in VALID_RANGES:
-        raise HTTPException(status_code=400, detail="range must be 24h, last24h, 7d or 30d")
+        raise HTTPException(status_code=400, detail="range must be 12h, 24h, last24h, 7d or 30d")
     return range_key
 
 
@@ -38,8 +38,15 @@ async def providers(range: str = "24h", search: str | None = None, limit: int = 
 
 
 @router.get("/api/stats/trend")
-async def trend(range: str = "24h", provider: str | None = None, model: str | None = None):
-    return service.trend(_validate_range(range), {"provider": provider, "model": model})
+async def trend(range: str = "24h", provider: str | None = None, model: str | None = None,
+                bucket_hours: int | None = None):
+    if bucket_hours not in (None, 1, 3):
+        raise HTTPException(status_code=400, detail="bucket_hours must be 1 or 3")
+    return service.trend(
+        _validate_range(range),
+        {"provider": provider, "model": model},
+        bucket_hours=bucket_hours,
+    )
 
 
 @router.get("/api/stats/errors")

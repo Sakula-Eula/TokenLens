@@ -56,6 +56,6 @@ def test_auth_fallback():
     out = apply_auth_fallback({"authorization": "Bearer sk-client"}, cfg, "openai")
     assert out["authorization"] == "Bearer sk-client"
     out = apply_auth_fallback({"content-type": "application/json"}, ProviderConfig("p", "anthropic", "https://x.com", "ak"), "anthropic")
+    assert out["x-api-key"] == "ak"
     out = apply_auth_fallback({"content-type": "application/json"}, ProviderConfig("p", "responses", "https://x.com", "sk-resp"), "responses")
     assert out["authorization"] == "Bearer sk-resp"
-    assert out["x-api-key"] == "ak"

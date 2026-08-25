@@ -9,7 +9,7 @@ def _record(model="gpt-5.6-sol", **overrides):
         "request_id": "req_cost", "provider": "openai", "model": model,
         "endpoint": "/v1/chat/completions", "stream": 0,
         "input_tokens": 1000, "output_tokens": 500, "cache_read_tokens": 200,
-        "cache_write_tokens": 0, "total_tokens": 1500, "latency_ms": 100,
+        "total_tokens": 1500, "latency_ms": 100,
         "status_code": 200, "success": 1, "error_type": None,
         "created_at": datetime.now().isoformat(timespec="seconds"),
     }
@@ -34,7 +34,7 @@ def test_price_change_only_affects_future_requests(tmp_path):
     rule = next(item for item in service.list_rules(conn) if item["name"] == "OpenAI GPT-5.6 Sol")
     payload = service.public_rule(rule)
     payload.update({"input_price_cny": "100", "output_price_cny": "200",
-                    "cache_read_price_cny": "10", "cache_write_price_cny": "0"})
+                    "cache_read_price_cny": "10"})
     service.update_rule(conn, rule["id"], payload)
     second = database.insert_request(_record(request_id="second", cache_read_tokens=0))
     first_cost = conn.execute("SELECT total_cost_micros FROM request_costs WHERE request_row_id=?", (first,)).fetchone()[0]

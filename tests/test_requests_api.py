@@ -13,7 +13,7 @@ async def client(tmp_path):
     database.insert_request({
         "request_id": "req_detail", "provider": "provider-a", "model": "gpt-test",
         "endpoint": "/v1/chat/completions", "stream": 1, "input_tokens": 10,
-        "output_tokens": 5, "cache_read_tokens": 3, "cache_write_tokens": 2,
+        "output_tokens": 5, "cache_read_tokens": 3,
         "total_tokens": 15, "latency_ms": 900, "status_code": 200, "success": 1,
         "error_type": None, "created_at": datetime.now().isoformat(timespec="seconds"),
     })
@@ -28,7 +28,7 @@ async def test_request_detail_and_not_found(client):
     response = await client.get(f"/api/requests/{listed['id']}")
     assert response.status_code == 200
     item = response.json()
-    assert item["request_id"] == "req_detail" and item["cache_write_tokens"] == 2
+    assert item["request_id"] == "req_detail"
     assert item["cost"] is not None and item["cost"]["priced"] == 0
     assert not ({"authorization", "api_key", "prompt", "response"} & item.keys())
     assert (await client.get("/api/requests/999999")).status_code == 404
@@ -39,3 +39,19 @@ async def test_request_status_group_and_contains(client):
     response = await client.get("/api/requests", params={"model_contains": "gpt", "status_group": "2xx"})
     assert response.status_code == 200 and response.json()["total"] == 1
     assert (await client.get("/api/requests", params={"status_group": "3xx"})).status_code == 400
+
+@pytest.mark.asyncio
+async def test_delete_single_request_and_filtered_requests(client):
+    listed = (await client.get("/api/requests")).json()["items"][0]
+    assert (await client.delete(f"/api/requests/{listed['id']}")).status_code == 204
+    assert (await client.get(f"/api/requests/{listed['id']}")).status_code == 404
+    assert (await client.delete(f"/api/requests/{listed['id']}")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_filtered_request_delete_requires_a_filter(client):
+    no_filter = await client.delete("/api/requests")
+    assert no_filter.status_code == 400
+    deleted = await client.delete("/api/requests", params={"provider_contains": "provider-a"})
+    assert deleted.status_code == 200 and deleted.json() == {"deleted": 1}
+    assert (await client.get("/api/requests")).json()["total"] == 0

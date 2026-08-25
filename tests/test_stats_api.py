@@ -12,7 +12,7 @@ def _record(**overrides):
         "request_id": "req_1", "provider": "provider_a", "model": "gpt-5.6-sol",
         "endpoint": "/v1/chat/completions", "stream": 0,
         "input_tokens": 100, "output_tokens": 50, "cache_read_tokens": 0,
-        "cache_write_tokens": 0, "total_tokens": 150, "latency_ms": 800,
+        "total_tokens": 150, "latency_ms": 800,
         "status_code": 200, "success": 1, "error_type": None,
         "created_at": datetime.now().isoformat(timespec="seconds"),
     }
@@ -35,7 +35,7 @@ async def client(app):
 @pytest.mark.asyncio
 async def test_summary(app, client):
     database.init_db(app.state.db_path)
-    database.insert_request(_record(cache_read_tokens=20, cache_write_tokens=10))
+    database.insert_request(_record(cache_read_tokens=20))
     database.insert_request(_record(
         request_id="req_2", success=0, status_code=500, error_type="server_error",
         cache_read_tokens=3,
@@ -45,20 +45,20 @@ async def test_summary(app, client):
     data = resp.json()
     assert data["requests"] == 2 and data["errors"] == 1
     assert data["input_tokens"] == 200 and data["total_tokens"] == 300
-    assert data["cache_read_tokens"] == 23 and data["cache_write_tokens"] == 10
-    assert data["cache_tokens"] == 33 and data["range"] == "24h"
+    assert data["cache_read_tokens"] == 23
+    assert data["cache_tokens"] == 23 and data["range"] == "24h"
     assert data["error_rate"] == 50.0
 
 
 @pytest.mark.asyncio
 async def test_models_and_providers(app, client):
     database.init_db(app.state.db_path)
-    database.insert_request(_record(cache_read_tokens=20, cache_write_tokens=10))
+    database.insert_request(_record(cache_read_tokens=20))
     database.insert_request(_record(request_id="req_2", model="claude-sonnet", provider="provider_b",
                                     total_tokens=50, input_tokens=30, output_tokens=20))
     models = (await client.get("/api/stats/models", params={"range": "7d"})).json()["items"]
     assert models[0]["model"] == "gpt-5.6-sol" and models[0]["total_tokens"] == 150
-    assert models[0]["cache_read_tokens"] == 20 and models[0]["cache_write_tokens"] == 10
+    assert models[0]["cache_read_tokens"] == 20
     providers = (await client.get("/api/stats/providers", params={"range": "7d"})).json()["items"]
     assert len(providers) == 2
 

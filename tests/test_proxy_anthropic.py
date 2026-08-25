@@ -39,7 +39,7 @@ async def test_anthropic_non_stream(app, client):
         return httpx.Response(200, headers={"request-id": "req_ant_1"}, json={
             "content": [{"type": "text", "text": "hi"}],
             "usage": {"input_tokens": 100, "output_tokens": 30,
-                      "cache_read_input_tokens": 50, "cache_creation_input_tokens": 10},
+                      "cache_read_input_tokens": 50},
         })
     app.state.client = httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=30.0)
 
@@ -48,7 +48,7 @@ async def test_anthropic_non_stream(app, client):
     assert resp.status_code == 200
     rec = queries.query_requests({})["items"][0]
     assert rec["provider"] == "provider_b" and rec["model"] == "claude-sonnet"
-    assert rec["input_tokens"] == 100 and rec["cache_read_tokens"] == 50 and rec["cache_write_tokens"] == 10
+    assert rec["input_tokens"] == 100 and rec["cache_read_tokens"] == 50
     assert rec["total_tokens"] == 130 and rec["request_id"] == "req_ant_1"
 
 
@@ -58,7 +58,7 @@ async def test_anthropic_stream_merge(app, client):
 
     def handler(request):
         return sse_response([
-            b'data: {"type":"message_start","message":{"usage":{"input_tokens":1000,"cache_read_input_tokens":600,"cache_creation_input_tokens":120}}}\n\n',
+            b'data: {"type":"message_start","message":{"usage":{"input_tokens":1000,"cache_read_input_tokens":600}}}\n\n',
             b'data: {"type":"content_block_delta","delta":{"text":"hello"}}\n\n',
             b'data: {"type":"message_delta","usage":{"output_tokens":300}}\n\n',
             b'data: {"type":"message_stop"}\n\n',
@@ -70,7 +70,7 @@ async def test_anthropic_stream_merge(app, client):
     assert resp.status_code == 200 and "hello" in resp.text
     rec = queries.query_requests({})["items"][0]
     assert rec["input_tokens"] == 1000 and rec["output_tokens"] == 300
-    assert rec["cache_read_tokens"] == 600 and rec["cache_write_tokens"] == 120
+    assert rec["cache_read_tokens"] == 600
     assert rec["total_tokens"] == 1300 and rec["success"] == 1
 
 

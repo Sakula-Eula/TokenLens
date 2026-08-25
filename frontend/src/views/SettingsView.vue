@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, watch } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import AppIcon from "../components/AppIcon.vue";
 import PricingRulesEditor from "../components/PricingRulesEditor.vue";
 import { fetchProviderSettings, saveProviderSettings } from "../api";
@@ -13,6 +13,14 @@ const loading = ref(true);
 const saving = ref(false);
 const message = ref("");
 const errorMessage = ref("");
+let messageTimer = null;
+
+function showSuccess(text) {
+  message.value = text;
+  errorMessage.value = "";
+  clearTimeout(messageTimer);
+  messageTimer = setTimeout(() => { message.value = ""; }, 3500);
+}
 
 function editable(item) {
   return { ...item, api_key: "", clear_api_key: false, persisted: true, expanded: false };
@@ -29,7 +37,7 @@ function harnessBaseUrl(name) {
 async function copyHarnessBaseUrl(item) {
   try {
     await navigator.clipboard.writeText(harnessBaseUrl(item.name));
-    message.value = "已复制 " + item.name + " 的 Harness Base URL。";
+    showSuccess("已复制 " + item.name + " 的 Harness Base URL。");
     errorMessage.value = "";
   } catch {
     errorMessage.value = "复制失败，请手动复制 Harness Base URL。";
@@ -75,15 +83,16 @@ async function save() {
     }));
     const data = await saveProviderSettings(payload);
     providers.value = (data.items || []).map(editable);
-    message.value = data.restart_required
+    showSuccess(data.restart_required
       ? "配置已安全保存，请重启 TokenLens 使新配置生效。"
-      : "配置已安全保存并立即生效。";
+      : "配置已安全保存并立即生效。");
   } catch (error) {
     errorMessage.value = error?.response?.data?.detail || "配置保存失败，请检查输入";
   } finally { saving.value = false; }
 }
 
 onMounted(refresh);
+onBeforeUnmount(() => clearTimeout(messageTimer));
 watch(() => props.refreshInterval, value => { localInterval.value = value; });
 defineExpose({ refresh });
 </script>
@@ -96,8 +105,8 @@ defineExpose({ refresh });
     </div>
 
     <div class="security-note"><AppIcon name="check" :size="18" /><span><b>密钥受到保护</b>后端不会返回已有 API Key。密钥输入留空会保留原值，只有勾选清除才会删除。</span></div>
-    <div v-if="message" class="message success"><AppIcon name="check" :size="17" />{{ message }}</div>
-    <div v-if="errorMessage" class="message error"><AppIcon name="alert" :size="17" />{{ errorMessage }}</div>
+    <div v-if="message" class="message success" role="status"><AppIcon name="check" :size="17" />{{ message }}</div>
+    <div v-if="errorMessage" class="message error" role="alert"><AppIcon name="alert" :size="17" />{{ errorMessage }}</div>
 
     <section class="general-card"><div><h2>自动刷新间隔</h2><p>应用于概览、分析、请求和错误页面，无需重启。</p></div><select v-model.number="localInterval" @change="emit('update-refresh-interval', localInterval)"><option :value="5000">5 秒</option><option :value="10000">10 秒（推荐）</option><option :value="30000">30 秒</option><option :value="60000">60 秒</option></select></section>
 
@@ -131,7 +140,7 @@ defineExpose({ refresh });
 </template>
 
 <style scoped>
-.settings-page { max-width: 1120px; margin: 0 auto; color: #344054; transition: opacity .2s; }.loading { opacity: .7; }.page-heading { min-height: 70px; display: flex; justify-content: space-between; gap: 16px; }.page-heading h1 { margin: 0; color: #101828; font-size: 22px; }.page-heading p { margin: 7px 0 0; color: #7b879b; font-size: 13px; }.add-button, footer button { height: 38px; border: 0; border-radius: 7px; padding: 0 15px; color: #fff; background: #2476f5; }.add-button span { margin-right: 5px; font-size: 18px; }.security-note, .message { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; padding: 12px 14px; border: 1px solid #cfe0fb; border-radius: 9px; color: #315b96; background: #f4f8ff; font-size: 12px; }.security-note span { display: flex; gap: 7px; }.message.success { border-color: #b7ebd4; color: #087a55; background: #effbf6; }.message.error { border-color: #fecaca; color: #b42318; background: #fff1f1; }
+.settings-page { max-width: 1120px; margin: 0 auto; color: #344054; transition: opacity .2s; }.loading { opacity: .7; }.page-heading { min-height: 70px; display: flex; justify-content: space-between; gap: 16px; }.page-heading h1 { margin: 0; color: #101828; font-size: 22px; }.page-heading p { margin: 7px 0 0; color: #7b879b; font-size: 13px; }.add-button, footer button { height: 38px; border: 0; border-radius: 7px; padding: 0 15px; color: #fff; background: #2476f5; }.add-button span { margin-right: 5px; font-size: 18px; }.security-note, .message { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; padding: 12px 14px; border: 1px solid #cfe0fb; border-radius: 9px; color: #315b96; background: #f4f8ff; font-size: 12px; }.message { position: fixed; right: 24px; bottom: 24px; z-index: 100; max-width: min(420px, calc(100vw - 32px)); margin: 0; box-shadow: 0 10px 24px rgba(16,24,40,.14); }.security-note span { display: flex; gap: 7px; }.message.success { border-color: #b7ebd4; color: #087a55; background: #effbf6; }.message.error { border-color: #fecaca; color: #b42318; background: #fff1f1; }
 .provider-list { display: grid; gap: 14px; }.provider-card { padding: 0 19px; border: 1px solid #e6ebf2; border-radius: 10px; background: #fff; box-shadow: 0 2px 8px rgba(16,24,40,.035); }.card-heading { display: flex; align-items: center; justify-content: space-between; min-height: 68px; gap: 14px; cursor: pointer; caret-color: transparent; user-select: none; }.provider-summary,.card-actions { display: flex; align-items: center; gap: 10px; min-width: 0; }.provider-summary>div { min-width: 0; }.card-heading h2 { margin: 0; color: #101828; font-size: 15px; }.card-heading small { display: block; overflow: hidden; margin-top: 4px; color: #98a2b3; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }.chevron { color: #98a2b3; transform: rotate(0); transition: transform .2s; }.chevron.expanded { transform: rotate(90deg); }.key-badge { flex: none; padding: 4px 8px; border-radius: 99px; color: #087a55; background: #eaf9f2; font-size: 10px; }.toggle-button,.delete-button { border: 0; background: transparent; font-size: 12px; }.toggle-button { color: #1769ef; }.delete-button { color: #d92d20; }.provider-details { padding: 1px 0 19px; border-top: 1px solid #eef1f5; }.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; padding-top: 17px; }.form-grid label { display: grid; gap: 7px; color: #667085; font-size: 11px; }.form-grid .base-url, .form-grid .api-key { grid-column: span 1; }.form-grid input, .form-grid select { height: 40px; border: 1px solid #dfe5ed; border-radius: 7px; padding: 0 11px; color: #344054; background: #fff; outline: none; }.form-grid input:focus, .form-grid select:focus { border-color: #8db6f7; box-shadow: 0 0 0 3px #2677f412; }.form-grid input:disabled { color: #667085; background: #f5f7fa; }.form-grid small { color: #98a2b3; font-size: 10px; }.clear-key { display: flex; align-items: center; gap: 7px; margin-top: 14px; color: #b42318; font-size: 11px; }.empty-state { min-height: 230px; display: grid; place-items: center; align-content: center; gap: 9px; border: 1px dashed #cfd7e3; border-radius: 10px; color: #98a2b3; }.empty-state b { color: #475467; font-size: 14px; }.empty-state span { font-size: 11px; }footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 16px; padding: 15px 0; color: #7b879b; font-size: 11px; }footer button { min-width: 120px; }footer button:disabled { opacity: .65; cursor: wait; }
 .general-card { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 14px; padding: 17px 19px; border: 1px solid #e6ebf2; border-radius: 10px; background: #fff; box-shadow: 0 2px 8px rgba(16,24,40,.035); }.general-card h2 { margin: 0; color: #101828; font-size: 15px; }.general-card p { margin: 5px 0 0; color: #98a2b3; font-size: 11px; }.general-card select { height: 38px; border: 1px solid #dfe5ed; border-radius: 7px; padding: 0 11px; color: #344054; background: #fff; }
 @media (max-width: 680px) { .form-grid { grid-template-columns: 1fr; }.page-heading { min-height: 82px; }.add-button { padding: 0 10px; }.security-note span { display: grid; }.form-grid .base-url, .form-grid .api-key { grid-column: auto; }.provider-card { padding: 0 14px; }.key-badge { display: none; }.card-actions { gap: 2px; }footer { align-items: flex-start; flex-direction: column; }footer button { width: 100%; } }

@@ -14,12 +14,12 @@ def test_openai_full_mapping():
         }
     }
     u = parse_openai(payload)
-    assert u == Usage(12500, 3210, 8000, 0, 15710)
+    assert u == Usage(12500, 3210, 8000, 15710)
 
 
 def test_openai_total_fallback():
     u = parse_openai({"usage": {"prompt_tokens": 100, "completion_tokens": 50}})
-    assert u == Usage(100, 50, 0, 0, 150)
+    assert u == Usage(100, 50, 0, 150)
 
 
 def test_openai_missing_usage_returns_none():
@@ -32,11 +32,10 @@ def test_anthropic_full_mapping():
             "input_tokens": 1000,
             "output_tokens": 300,
             "cache_read_input_tokens": 600,
-            "cache_creation_input_tokens": 120,
         }
     }
     u = parse_anthropic(payload)
-    assert u == Usage(1000, 300, 600, 120, 1300)
+    assert u == Usage(1000, 300, 600, 1300)
 
 
 def test_anthropic_missing_usage_returns_none():
@@ -53,12 +52,12 @@ def test_responses_full_mapping():
         }
     }
     u = parse_responses(payload)
-    assert u == Usage(12500, 3210, 8000, 0, 15710)
+    assert u == Usage(12500, 3210, 8000, 15710)
 
 
 def test_responses_total_fallback():
     u = parse_responses({"usage": {"input_tokens": 100, "output_tokens": 50}})
-    assert u == Usage(100, 50, 0, 0, 150)
+    assert u == Usage(100, 50, 0, 150)
 
 
 def test_responses_missing_usage_returns_none():

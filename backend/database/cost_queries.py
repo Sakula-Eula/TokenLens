@@ -34,7 +34,6 @@ def summary(period: str) -> dict:
            COALESCE(SUM(c.input_cost_micros), 0) AS input_cost_micros,
            COALESCE(SUM(c.output_cost_micros), 0) AS output_cost_micros,
            COALESCE(SUM(c.cache_read_cost_micros), 0) AS cache_read_cost_micros,
-           COALESCE(SUM(c.cache_write_cost_micros), 0) AS cache_write_cost_micros,
            COALESCE(SUM(c.total_cost_micros), 0) AS total_cost_micros
            FROM api_requests r LEFT JOIN request_costs c ON c.request_row_id = r.id
            WHERE r.created_at >= ?""",
@@ -56,7 +55,6 @@ def grouped(column: str, period: str, limit: int = 50) -> dict:
            COALESCE(SUM(c.input_cost_micros), 0) AS input_cost_micros,
            COALESCE(SUM(c.output_cost_micros), 0) AS output_cost_micros,
            COALESCE(SUM(c.cache_read_cost_micros), 0) AS cache_read_cost_micros,
-           COALESCE(SUM(c.cache_write_cost_micros), 0) AS cache_write_cost_micros,
            COALESCE(SUM(c.total_cost_micros), 0) AS total_cost_micros,
            COALESCE(SUM(CASE WHEN c.priced = 0 OR c.priced IS NULL THEN 1 ELSE 0 END), 0) AS unpriced_requests
            FROM api_requests r LEFT JOIN request_costs c ON c.request_row_id = r.id
@@ -74,7 +72,6 @@ def trend(period: str) -> dict:
            COALESCE(SUM(c.input_cost_micros), 0) AS input_cost_micros,
            COALESCE(SUM(c.output_cost_micros), 0) AS output_cost_micros,
            COALESCE(SUM(c.cache_read_cost_micros), 0) AS cache_read_cost_micros,
-           COALESCE(SUM(c.cache_write_cost_micros), 0) AS cache_write_cost_micros,
            COALESCE(SUM(c.total_cost_micros), 0) AS total_cost_micros
            FROM api_requests r LEFT JOIN request_costs c ON c.request_row_id = r.id
            WHERE r.created_at >= ? GROUP BY bucket ORDER BY bucket""",

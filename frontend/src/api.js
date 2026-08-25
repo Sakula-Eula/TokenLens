@@ -22,6 +22,11 @@ export async function fetchRequests(params) {
 }
 export async function fetchRequestDetail(id) {
   return (await http.get(`/api/requests/${id}`)).data;
+}export async function deleteRequest(id) {
+  await http.delete(`/api/requests/${id}`);
+}
+export async function deleteRequests(params) {
+  return (await http.delete("/api/requests", { params })).data;
 }
 export async function fetchErrors(range = "24h", params = {}) {
   return (await http.get("/api/stats/errors", { params: { range, ...params } })).data;

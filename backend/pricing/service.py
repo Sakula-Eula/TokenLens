@@ -40,40 +40,37 @@ def snapshot_request_cost(conn: sqlite3.Connection, request_row_id: int, record:
     input_tokens = max(0, int(record.get("input_tokens") or 0))
     output_tokens = max(0, int(record.get("output_tokens") or 0))
     cache_read_tokens = max(0, int(record.get("cache_read_tokens") or 0))
-    cache_write_tokens = max(0, int(record.get("cache_write_tokens") or 0))
     if rule:
         billable_input = input_tokens
         if rule["input_includes_cache"]:
-            billable_input = max(0, input_tokens - cache_read_tokens - cache_write_tokens)
+            billable_input = max(0, input_tokens - cache_read_tokens)
         input_cost = _token_cost(billable_input, rule["input_price_micros"])
         output_cost = _token_cost(output_tokens, rule["output_price_micros"])
         cache_read_cost = _token_cost(cache_read_tokens, rule["cache_read_price_micros"])
-        cache_write_cost = _token_cost(cache_write_tokens, rule["cache_write_price_micros"])
         values = (
             request_row_id, rule["id"], rule["name"], rule["provider"], rule["model_pattern"],
             rule["match_type"], 1, rule["input_includes_cache"], billable_input,
-            input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+            input_tokens, output_tokens, cache_read_tokens,
             rule["input_price_micros"], rule["output_price_micros"],
-            rule["cache_read_price_micros"], rule["cache_write_price_micros"],
-            input_cost, output_cost, cache_read_cost, cache_write_cost,
-            input_cost + output_cost + cache_read_cost + cache_write_cost,
+            rule["cache_read_price_micros"],
+            input_cost, output_cost, cache_read_cost,
+            input_cost + output_cost + cache_read_cost,
             datetime.now().isoformat(timespec="seconds"),
         )
     else:
         values = (
             request_row_id, None, None, None, None, None, 0, 0, input_tokens,
-            input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, datetime.now().isoformat(timespec="seconds"),
+            input_tokens, output_tokens, cache_read_tokens,
+            0, 0, 0, 0, 0, 0, 0, datetime.now().isoformat(timespec="seconds"),
         )
     conn.execute(
         """INSERT OR IGNORE INTO request_costs (
              request_row_id, pricing_rule_id, rule_name, provider_scope, model_pattern,
              match_type, priced, input_includes_cache, billable_input_tokens,
-             input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+             input_tokens, output_tokens, cache_read_tokens,
              input_price_micros, output_price_micros, cache_read_price_micros,
-             cache_write_price_micros, input_cost_micros, output_cost_micros,
-             cache_read_cost_micros, cache_write_cost_micros, total_cost_micros, calculated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             input_cost_micros, output_cost_micros, cache_read_cost_micros, total_cost_micros, calculated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         values,
     )
 
@@ -84,15 +81,15 @@ def _seed_defaults(conn: sqlite3.Connection) -> None:
         return
     now = datetime.now().isoformat(timespec="seconds")
     for priority, item in enumerate(reversed(DEFAULT_PRICE_RULES), start=100):
-        name, provider, pattern, match_type, input_p, output_p, read_p, write_p, includes = item
+        name, provider, pattern, match_type, input_p, output_p, read_p, includes = item
         conn.execute(
             """INSERT INTO pricing_rules
                (name, provider, model_pattern, match_type, input_price_micros,
-                output_price_micros, cache_read_price_micros, cache_write_price_micros,
+                output_price_micros, cache_read_price_micros,
                 input_includes_cache, priority, enabled, built_in, source_note, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)""",
             (name, provider, pattern, match_type, cny_to_micros(input_p), cny_to_micros(output_p),
-             cny_to_micros(read_p), cny_to_micros(write_p), int(includes), priority,
+             cny_to_micros(read_p), int(includes), priority,
              PRICE_SOURCE_NOTE, now),
         )
     conn.execute("INSERT INTO app_metadata(key, value) VALUES (?, ?)", (SEED_VERSION, now))
@@ -110,7 +107,7 @@ def initialize_pricing(conn: sqlite3.Connection) -> None:
 
 def public_rule(rule: dict) -> dict:
     result = dict(rule)
-    for key in ("input_price", "output_price", "cache_read_price", "cache_write_price"):
+    for key in ("input_price", "output_price", "cache_read_price"):
         result[f"{key}_cny"] = micros_to_cny(result.pop(f"{key}_micros"))
     return result
 
@@ -131,7 +128,6 @@ def _validate_rule(data: dict) -> dict:
         "input_price_micros": cny_to_micros(data.get("input_price_cny", 0)),
         "output_price_micros": cny_to_micros(data.get("output_price_cny", 0)),
         "cache_read_price_micros": cny_to_micros(data.get("cache_read_price_cny", 0)),
-        "cache_write_price_micros": cny_to_micros(data.get("cache_write_price_cny", 0)),
         "input_includes_cache": int(bool(data.get("input_includes_cache"))),
         "priority": int(data.get("priority") or 0), "enabled": int(bool(data.get("enabled", True))),
         "source_note": str(data.get("source_note") or "").strip() or None,
@@ -155,10 +151,10 @@ def create_rule(conn: sqlite3.Connection, data: dict) -> dict:
     cursor = conn.execute(
         """INSERT INTO pricing_rules
            (name, provider, model_pattern, match_type, input_price_micros, output_price_micros,
-            cache_read_price_micros, cache_write_price_micros, input_includes_cache,
+            cache_read_price_micros, input_includes_cache,
             priority, enabled, built_in, source_note, updated_at)
            VALUES (:name, :provider, :model_pattern, :match_type, :input_price_micros,
-            :output_price_micros, :cache_read_price_micros, :cache_write_price_micros,
+            :output_price_micros, :cache_read_price_micros,
             :input_includes_cache, :priority, :enabled, 0, :source_note, :updated_at)""",
         {**rule, "updated_at": now},
     )
@@ -177,7 +173,6 @@ def update_rule(conn: sqlite3.Connection, rule_id: int, data: dict) -> dict | No
         """UPDATE pricing_rules SET name=:name, provider=:provider, model_pattern=:model_pattern,
            match_type=:match_type, input_price_micros=:input_price_micros,
            output_price_micros=:output_price_micros, cache_read_price_micros=:cache_read_price_micros,
-           cache_write_price_micros=:cache_write_price_micros,
            input_includes_cache=:input_includes_cache, priority=:priority, enabled=:enabled,
            source_note=:source_note, updated_at=:updated_at WHERE id=:id""",
         {**rule, "updated_at": datetime.now().isoformat(timespec="seconds"), "id": rule_id},

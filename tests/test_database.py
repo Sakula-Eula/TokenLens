@@ -4,7 +4,7 @@ from backend.database import database, queries
 
 SCHEMA_FIELDS = {
     "id", "request_id", "provider", "model", "endpoint", "stream",
-    "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens",
+    "input_tokens", "output_tokens", "cache_read_tokens",
     "total_tokens", "latency_ms", "status_code", "success", "error_type", "created_at",
 }
 
@@ -14,7 +14,7 @@ def _record(**overrides):
         "request_id": "req_1", "provider": "provider_a", "model": "gpt-5.6-sol",
         "endpoint": "/v1/chat/completions", "stream": 0,
         "input_tokens": 100, "output_tokens": 50, "cache_read_tokens": 0,
-        "cache_write_tokens": 0, "total_tokens": 150, "latency_ms": 800,
+        "total_tokens": 150, "latency_ms": 800,
         "status_code": 200, "success": 1, "error_type": None,
         "created_at": datetime.now().isoformat(timespec="seconds"),
     }
@@ -50,7 +50,7 @@ def test_insert_and_query_with_filters(tmp_path):
 
 def test_summary_and_group_stats(tmp_path):
     database.init_db(tmp_path / "test.db")
-    database.insert_request(_record(cache_read_tokens=25, cache_write_tokens=5))
+    database.insert_request(_record(cache_read_tokens=25))
     database.insert_request(_record(
         request_id="req_2", success=0, status_code=500, error_type="server_error",
         cache_read_tokens=10,
@@ -58,10 +58,10 @@ def test_summary_and_group_stats(tmp_path):
     today = datetime.now().strftime("%Y-%m-%d")
     s = queries.today_summary(today)
     assert s["requests"] == 2 and s["errors"] == 1 and s["input_tokens"] == 200
-    assert s["cache_read_tokens"] == 35 and s["cache_write_tokens"] == 5
-    assert s["cache_tokens"] == 40
+    assert s["cache_read_tokens"] == 35
+    assert s["cache_tokens"] == 35
     models = queries.group_stats("model", today)
-    assert len(models) == 1 and models[0]["total_tokens"] == 300 and models[0]["cache_tokens"] == 40
+    assert len(models) == 1 and models[0]["total_tokens"] == 300 and models[0]["cache_tokens"] == 35
     providers = queries.group_stats("provider", today)
     assert providers[0]["provider"] == "provider_a"
 
@@ -102,6 +102,19 @@ def test_trend_buckets(tmp_path):
     assert len(days) >= 1
 
 
+def test_trend_buckets_support_three_hour_intervals(tmp_path):
+    database.init_db(tmp_path / "test.db")
+    base = datetime.now() - timedelta(hours=6)
+    base = base.replace(hour=base.hour - base.hour % 3, minute=0, second=0, microsecond=0)
+    database.insert_request(_record(request_id="r1", total_tokens=100, created_at=(base + timedelta(minutes=30)).isoformat(timespec="seconds")))
+    database.insert_request(_record(request_id="r2", total_tokens=200, created_at=(base + timedelta(hours=1)).isoformat(timespec="seconds")))
+    database.insert_request(_record(request_id="r3", total_tokens=300, created_at=(base + timedelta(hours=3)).isoformat(timespec="seconds")))
+
+    buckets = {item["bucket"]: item["total_tokens"] for item in queries.trend_stats("7d", bucket_hours=3)}
+    assert buckets[base.strftime("%Y-%m-%dT%H")] == 300
+    assert buckets[(base + timedelta(hours=3)).strftime("%Y-%m-%dT%H")] == 300
+
+
 def test_fuzzy_filters_escape_wildcards_and_status_groups(tmp_path):
     database.init_db(tmp_path / "test.db")
     database.insert_request(_record(request_id="literal", provider="alpha%team", model="gpt_special",
@@ -127,3 +140,20 @@ def test_grouped_stats_pagination_sort_and_filtered_trend(tmp_path):
     trend = queries.trend_stats("24h", {"model": "model-a"})
     assert sum(item["total_tokens"] for item in trend) == 150
     assert all({"input_tokens", "output_tokens", "cache_tokens"} <= item.keys() for item in trend)
+
+
+def test_delete_requests_removes_cost_snapshots_and_requires_filters(tmp_path):
+    conn = database.init_db(tmp_path / "test.db")
+    first = database.insert_request(_record(request_id="delete_me", provider="provider-delete"))
+    database.insert_request(_record(request_id="keep_me", provider="provider-keep"))
+    assert conn.execute("SELECT COUNT(*) FROM request_costs WHERE request_row_id = ?", (first,)).fetchone()[0] == 1
+    assert queries.delete_requests({"provider_contains": "provider-delete"}) == 1
+    assert conn.execute("SELECT COUNT(*) FROM api_requests WHERE id = ?", (first,)).fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM request_costs WHERE request_row_id = ?", (first,)).fetchone()[0] == 0
+    assert queries.query_requests({})["total"] == 1
+    try:
+        queries.delete_requests({})
+    except ValueError as exc:
+        assert "filter" in str(exc)
+    else:
+        raise AssertionError("unfiltered request deletion must be rejected")

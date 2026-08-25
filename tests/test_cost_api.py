@@ -10,7 +10,7 @@ from backend.database import database
 def _record(model="gpt-5.6-sol", provider="openai"):
     return {"request_id": model, "provider": provider, "model": model,
             "endpoint": "/v1/chat/completions", "stream": 0, "input_tokens": 1000,
-            "output_tokens": 500, "cache_read_tokens": 0, "cache_write_tokens": 0,
+            "output_tokens": 500, "cache_read_tokens": 0,
             "total_tokens": 1500, "latency_ms": 100, "status_code": 200, "success": 1,
             "error_type": None, "created_at": datetime.now().isoformat(timespec="seconds")}
 
@@ -43,7 +43,7 @@ async def test_pricing_crud_and_preview_does_not_reprice_history(client):
     before = (await client.get("/api/costs/summary")).json()["total_cost_micros"]
     payload = {"name": "Private", "provider": "private", "model_pattern": "unpriced-*",
                "match_type": "glob", "input_price_cny": "1", "output_price_cny": "2",
-               "cache_read_price_cny": "0.1", "cache_write_price_cny": "1.25",
+               "cache_read_price_cny": "0.1",
                "input_includes_cache": True, "priority": 500, "enabled": True}
     preview = await client.post("/api/pricing/rules/preview", json=payload)
     assert preview.status_code == 200 and preview.json()["items"][0]["model"] == "unpriced-private"
