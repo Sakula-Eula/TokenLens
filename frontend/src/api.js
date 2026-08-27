@@ -4,6 +4,21 @@ import axios from "axios";
 // receive their configurable interval from App.vue.
 export const POLL_INTERVAL_MS = 30000;
 const http = axios.create({ baseURL: "/", timeout: 10000 });
+const adminToken = new URLSearchParams(window.location.search).get("admin_token");
+
+if (adminToken) {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("admin_token");
+  window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
+http.interceptors.request.use((request) => {
+  if (adminToken && ["post", "put", "patch", "delete"].includes(request.method)) {
+    request.headers = request.headers || {};
+    request.headers["X-TokenLens-Admin"] = adminToken;
+  }
+  return request;
+});
 
 export async function fetchSummary(range = "24h") {
   return (await http.get("/api/stats/summary", { params: { range } })).data;

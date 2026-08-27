@@ -61,7 +61,7 @@ providers:
 | Anthropic Messages | `anthropic` | `http://127.0.0.1:7788/anthropic/v1` | `/messages` |
 
 
-当客户端已发送相应认证头时，TokenLens 原样转发；只有客户端未发送认证头时，才使用 `config.yaml` 中的 `api_key` 回退。
+默认情况下，客户端必须自行发送认证头，TokenLens 仅原样转发。只有在 `config.yaml` 顶层明确设置 `allow_api_key_fallback: true` 时，才会使用 Provider 的 `api_key` 兜底；这会允许能访问本机代理端口的程序消耗对应额度。桌面托盘模式会为所有管理写操作生成一次性本地令牌。
 
 ## 验证
 

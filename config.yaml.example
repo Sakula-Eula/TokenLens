@@ -12,6 +12,10 @@
 #    - 客户端（Codex 等）或 CC Switch 已带 Authorization / x-api-key 时，原样透传，无需填写
 #    - 只有请求完全没有鉴权头时，TokenLens 才用这里的 api_key 兜底补充
 # 5. 修改配置后需重启 TokenLens 生效
+# 安全默认值：客户端必须自行发送 Authorization 或 x-api-key。
+# 只有明确设为 true 时，才允许使用下方 provider 的 api_key 作为兜底。
+allow_api_key_fallback: false
+
 
 providers:
 

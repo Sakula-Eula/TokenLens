@@ -7,6 +7,7 @@ import logging
 import multiprocessing
 import threading
 import time
+from urllib.parse import urlencode
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
@@ -116,25 +117,29 @@ class WidgetApi:
         self._controller.set_widget_pointer_inside(False)
 
 
-def _dashboard_command_monitor(window, commands, base_url: str) -> None:
+def _app_url(base_url: str, path: str, admin_token: str) -> str:
+    return f"{base_url}{path}?{urlencode({'admin_token': admin_token})}"
+
+
+def _dashboard_command_monitor(window, commands, base_url: str, admin_token: str) -> None:
     while True:
         path = commands.get()
         if path is None:
             window.destroy()
             return
-        window.load_url(f"{base_url}{path}")
+        window.load_url(_app_url(base_url, path, admin_token))
         window.show()
         window.restore()
 
 
-def run_dashboard_process(base_url: str, initial_path: str, commands) -> None:
+def run_dashboard_process(base_url: str, initial_path: str, commands, admin_token: str) -> None:
     """Run the Dashboard in its own native GUI process."""
     import webview
 
     _set_app_user_model_id()
     window = webview.create_window(
         "TokenLens",
-        f"{base_url}{initial_path}",
+        _app_url(base_url, initial_path, admin_token),
         width=1280,
         height=820,
         min_size=(960, 640),
@@ -144,7 +149,7 @@ def run_dashboard_process(base_url: str, initial_path: str, commands) -> None:
     def start_command_monitor() -> None:
         threading.Thread(
             target=_dashboard_command_monitor,
-            args=(window, commands, base_url),
+            args=(window, commands, base_url, admin_token),
             name="dashboard-command-monitor",
             daemon=True,
         ).start()
@@ -163,11 +168,13 @@ class DesktopController:
     def __init__(
         self,
         base_url: str,
+        admin_token: str = "",
         *,
         hover_grace: float = HOVER_GRACE_SECONDS,
         process_context=None,
     ):
         self.base_url = base_url.rstrip("/")
+        self.admin_token = admin_token
         self.hover_grace = hover_grace
         self.widget: Any | None = None
         self._webview: Any | None = None
@@ -193,7 +200,7 @@ class DesktopController:
         api = WidgetApi(self)
         self.widget = webview.create_window(
             "TokenLens 概览",
-            f"{self.base_url}/widget",
+            _app_url(self.base_url, "/widget", self.admin_token),
             js_api=api,
             width=WIDGET_WIDTH,
             height=WIDGET_HEIGHT,
@@ -301,7 +308,7 @@ class DesktopController:
             commands = self._process_context.Queue()
             process = self._process_context.Process(
                 target=run_dashboard_process,
-                args=(self.base_url, path, commands),
+                args=(self.base_url, path, commands, self.admin_token),
                 name="TokenLens-Dashboard",
                 daemon=True,
             )
